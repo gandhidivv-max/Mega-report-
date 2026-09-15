@@ -62,7 +62,6 @@ def send_telegram_photo(photo_url, caption):
         "parse_mode": "Markdown"
     }
     res = requests.post(url, json=payload)
-    # ఫోటో పంపడంలో ఏమైనా ఇబ్బంది వస్తే బ్యాకప్ మెసేజ్ పంపుతుంది
     if res.status_code != 200:
         send_telegram_message(caption)
 
@@ -70,7 +69,6 @@ def generate_cinematic_dashboard_image(accounts_data, total_files, total_videos,
     labels = [acc["name"] for acc in accounts_data]
     video_counts = [acc["videos"] for acc in accounts_data]
 
-    # QuickChart API Compatible JSON Format
     chart_config = {
         "type": "bar",
         "data": {
@@ -128,16 +126,21 @@ def generate_cinematic_dashboard_image(accounts_data, total_files, total_videos,
 
 def scan_mega_account(email, password, do_ping):
     mega = Mega()
+    mega.session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    })
+    
     m = None
     for attempt in range(3):
         try:
+            time.sleep(12)
             m = mega.login(email, password)
             if m:
                 break
         except Exception as e:
             if attempt == 2:
                 raise e
-            time.sleep(5)
+            time.sleep(15)
     
     trash_id = getattr(m, 'trash_id', None) or getattr(m, 'trash_folder', None)
     files_data = m.get_files()
@@ -243,4 +246,3 @@ if __name__ == "__main__":
 
     except Exception as e:
         send_telegram_message(f"❌ *Error Occurred:* `{str(e)}`")
-    
