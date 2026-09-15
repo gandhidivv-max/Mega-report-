@@ -32,8 +32,11 @@ def get_all_mega_credentials():
 
 def load_state():
     if os.path.exists(STATE_FILE):
-        with open(STATE_FILE, "r") as f:
-            return json.load(f)
+        try:
+            with open(STATE_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
     return {"files": {}, "max_video_count": 0, "total_files": 0, "missing_videos": {}, "last_ping_time": 0}
 
 def save_state(state):
@@ -70,6 +73,9 @@ def scan_mega_account(email, password, do_ping):
     mega = Mega()
     m = mega.login(email, password)
     
+    # trash_id లేదా trash_folder ని సేఫ్‌గా రీడ్ చేయడం
+    trash_id = getattr(m, 'trash_id', None) or getattr(m, 'trash_folder', None)
+    
     ping_status = False
     if do_ping:
         ping_status = perform_keep_alive(m, email)
@@ -81,25 +87,26 @@ def scan_mega_account(email, password, do_ping):
     total_files = 0
     deleted_bin_count = 0
 
-    for file_id, file_info in files_data.items():
-        if file_info.get('t') == 0:
-            file_name = file_info.get('a', {}).get('n', 'Unknown')
-            parent_id = file_info.get('p', '')
+    if isinstance(files_data, dict):
+        for file_id, file_info in files_data.items():
+            if isinstance(file_info, dict) and file_info.get('t') == 0:
+                file_name = file_info.get('a', {}).get('n', 'Unknown')
+                parent_id = file_info.get('p', '')
 
-            if parent_id == m.trash_id:
-                deleted_bin_count += 1
-                trash_files[file_id] = file_name
-            else:
-                total_files += 1
-                unique_key = f"{email}_{file_id}"
-                account_files[unique_key] = {
-                    "name": file_name,
-                    "email": email,
-                    "file_id": file_id,
-                    "is_video": file_name.lower().endswith(video_extensions)
-                }
-                if file_name.lower().endswith(video_extensions):
-                    video_count += 1
+                if trash_id and parent_id == trash_id:
+                    deleted_bin_count += 1
+                    trash_files[file_id] = file_name
+                else:
+                    total_files += 1
+                    unique_key = f"{email}_{file_id}"
+                    account_files[unique_key] = {
+                        "name": file_name,
+                        "email": email,
+                        "file_id": file_id,
+                        "is_video": file_name.lower().endswith(video_extensions)
+                    }
+                    if file_name.lower().endswith(video_extensions):
+                        video_count += 1
 
     return account_files, trash_files, total_files, video_count, deleted_bin_count, ping_status
 
@@ -118,7 +125,6 @@ if __name__ == "__main__":
 
         current_time = time.time()
         fifteen_days_sec = 15 * 24 * 60 * 60
-        
         do_ping = (current_time - last_ping_time) >= fifteen_days_sec
 
         combined_files = {}
@@ -131,6 +137,7 @@ if __name__ == "__main__":
 
         for acc in mega_accounts:
             try:
+                time.sleep(2) # API Rate Limit కి గురికాకుండా ఉండటానికి 2 సెకన్ల విరామం
                 files, trash, t_files, v_count, d_bin, ping_ok = scan_mega_account(acc["email"], acc["pass"], do_ping)
                 combined_files.update(files)
                 all_trash_files.update(trash)
@@ -143,7 +150,7 @@ if __name__ == "__main__":
                 if ping_ok:
                     pings_done = True
             except Exception as e:
-                acc_summary.append(f"• *{acc['name']}:* ❌ Error (`{str(e)}`)")
+                acc_summary.append(f"• *{acc['name']}:* ❌ Error ({str(e)})")
 
         if pings_done or last_ping_time == 0:
             last_ping_time = current_time
@@ -188,7 +195,6 @@ if __name__ == "__main__":
                         f"   📧 *అకౌంట్:* `{info['account']}`\n"
                         f"   ❓ *కారణం:* {info['reason']}\n"
                     )
-            alert_msg += "\n❗ *గమనిక:* మళ్లీ కౌంట్ బ్యాలెన్స్ అయ్యే వరకు ఈ హెచ్చరిక ప్రతి రన్ లోనూ వస్తుంది!"
             send_telegram_message(alert_msg)
 
         report_text = (
@@ -211,4 +217,4 @@ if __name__ == "__main__":
 
     except Exception as e:
         send_telegram_message(f"❌ *Error Occurred:* `{str(e)}`")
-  
+                
