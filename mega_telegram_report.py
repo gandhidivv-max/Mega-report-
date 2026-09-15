@@ -44,6 +44,9 @@ def save_state(state):
         json.dump(state, f, indent=4)
 
 def send_telegram_message(message):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Telegram tokens missing!")
+        return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
@@ -73,7 +76,7 @@ def scan_mega_account(email, password, do_ping):
     mega = Mega()
     m = mega.login(email, password)
     
-    # trash_id లేదా trash_folder ని సేఫ్‌గా రీడ్ చేయడం
+    # Trash ID సరిగ్గా హ్యాండిల్ చేయడం
     trash_id = getattr(m, 'trash_id', None) or getattr(m, 'trash_folder', None)
     
     ping_status = False
@@ -89,8 +92,13 @@ def scan_mega_account(email, password, do_ping):
 
     if isinstance(files_data, dict):
         for file_id, file_info in files_data.items():
+            # Data Parsing Safe Check
             if isinstance(file_info, dict) and file_info.get('t') == 0:
-                file_name = file_info.get('a', {}).get('n', 'Unknown')
+                attr = file_info.get('a', {})
+                file_name = 'Unknown'
+                if isinstance(attr, dict):
+                    file_name = attr.get('n', 'Unknown')
+                
                 parent_id = file_info.get('p', '')
 
                 if trash_id and parent_id == trash_id:
@@ -103,9 +111,9 @@ def scan_mega_account(email, password, do_ping):
                         "name": file_name,
                         "email": email,
                         "file_id": file_id,
-                        "is_video": file_name.lower().endswith(video_extensions)
+                        "is_video": str(file_name).lower().endswith(video_extensions)
                     }
-                    if file_name.lower().endswith(video_extensions):
+                    if str(file_name).lower().endswith(video_extensions):
                         video_count += 1
 
     return account_files, trash_files, total_files, video_count, deleted_bin_count, ping_status
@@ -137,7 +145,7 @@ if __name__ == "__main__":
 
         for acc in mega_accounts:
             try:
-                time.sleep(2) # API Rate Limit కి గురికాకుండా ఉండటానికి 2 సెకన్ల విరామం
+                time.sleep(3) # Mega Rate limit తగ్గించడానికి విరామం
                 files, trash, t_files, v_count, d_bin, ping_ok = scan_mega_account(acc["email"], acc["pass"], do_ping)
                 combined_files.update(files)
                 all_trash_files.update(trash)
@@ -150,7 +158,7 @@ if __name__ == "__main__":
                 if ping_ok:
                     pings_done = True
             except Exception as e:
-                acc_summary.append(f"• *{acc['name']}:* ❌ Error ({str(e)})")
+                acc_summary.append(f"• *{acc['name']}:* ❌ Error (`{str(e)}`)")
 
         if pings_done or last_ping_time == 0:
             last_ping_time = current_time
@@ -217,4 +225,4 @@ if __name__ == "__main__":
 
     except Exception as e:
         send_telegram_message(f"❌ *Error Occurred:* `{str(e)}`")
-                
+        
