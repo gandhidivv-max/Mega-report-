@@ -1,7 +1,7 @@
 name: Run Mega Script
 
 on:
-  workflow_dispatch: # కేవలం మీరు మాన్యువల్‌గా రన్ చేయడానికి మాత్రమే
+  workflow_dispatch:
 
 jobs:
   run-mega:
@@ -37,8 +37,8 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git pull origin main --rebase
           git add mega_state.json
           git commit -m "Update mega_state.json" || exit 0
+          git pull origin main --rebase
           git push origin main
           
