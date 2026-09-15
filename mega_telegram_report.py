@@ -2,6 +2,7 @@ import os
 import json
 import time
 import requests
+import urllib.parse
 from mega import Mega
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -45,38 +46,70 @@ def save_state(state):
 
 def send_telegram_message(message):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Telegram tokens missing!")
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    requests.post(url, json=payload)
+
+def send_telegram_photo(photo_url, caption):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
+        "photo": photo_url,
+        "caption": caption,
         "parse_mode": "Markdown"
     }
     requests.post(url, json=payload)
 
-def perform_keep_alive(mega_instance, email):
-    try:
-        dummy_file = "keep_alive_ping.txt"
-        with open(dummy_file, "w") as f:
-            f.write(f"Account Keep Alive Ping at {time.ctime()}")
-        
-        uploaded_file = mega_instance.upload(dummy_file)
-        time.sleep(2)
-        mega_instance.delete(uploaded_file[0])
-        
-        if os.path.exists(dummy_file):
-            os.remove(dummy_file)
-        return True
-    except Exception as e:
-        print(f"Ping failed for {email}: {e}")
-        return False
+def generate_cinematic_dashboard_image(accounts_data, total_files, total_videos, target_count):
+    labels = [acc["name"] for acc in accounts_data]
+    video_counts = [acc["videos"] for acc in accounts_data]
+
+    chart_config = {
+        "type": "bar",
+        "data": {
+            "labels": labels,
+            "datasets": [{
+                "label": "Videos Count",
+                "data": video_counts,
+                "backgroundColor": ["rgba(0, 242, 254, 0.85)", "rgba(185, 29, 115, 0.85)", "rgba(255, 154, 0, 0.85)"],
+                "borderColor": ["#00f2fe", "#b91d73", "#ff9a00"],
+                "borderWidth": 2,
+                "borderRadius": 8
+            }]
+        },
+        "options": {
+            "plugins": {
+                "title": {
+                    "display": True,
+                    "text": f"MEGA CLOUD STORAGE ({total_videos}/{target_count} Videos)",
+                    "color": "#ffffff",
+                    "font": {"size": 18, "weight": "bold"}
+                },
+                "legend": {"display": False}
+            },
+            "scales": {
+                "x": {
+                    "ticks": {"color": "#a0aec0", "font": {"size": 14}},
+                    "grid": {"display": False}
+                },
+                "y": {
+                    "ticks": {"color": "#a0aec0", "font": {"size": 14}},
+                    "grid": {"color": "rgba(255, 255, 255, 0.1)"}
+                }
+            }
+        }
+    }
+
+    encoded_chart = urllib.parse.quote(json.dumps(chart_config))
+    image_url = f"https://quickchart.io/chart?c={encoded_chart}&bkg=%230f172a&w=700&h=400&devicePixelRatio=2"
+    return image_url
 
 def scan_mega_account(email, password, do_ping):
     mega = Mega()
     m = None
-    
-    # Mega API Rate limit ను అధిగమించడానికి 3 సార్లు లాగిన్ రీట్రై లాజిక్
     for attempt in range(3):
         try:
             m = mega.login(email, password)
@@ -85,14 +118,9 @@ def scan_mega_account(email, password, do_ping):
         except Exception as e:
             if attempt == 2:
                 raise e
-            time.sleep(5) # ఓపెన్ సెషన్ కోసం 5 సెకన్ల విరామం
+            time.sleep(5)
     
     trash_id = getattr(m, 'trash_id', None) or getattr(m, 'trash_folder', None)
-    
-    ping_status = False
-    if do_ping:
-        ping_status = perform_keep_alive(m, email)
-
     files_data = m.get_files()
     account_files = {}
     trash_files = {}
@@ -125,7 +153,7 @@ def scan_mega_account(email, password, do_ping):
                     if str(file_name).lower().endswith(video_extensions):
                         video_count += 1
 
-    return account_files, trash_files, total_files, video_count, deleted_bin_count, ping_status
+    return account_files, trash_files, total_files, video_count, deleted_bin_count, False
 
 if __name__ == "__main__":
     try:
@@ -141,97 +169,53 @@ if __name__ == "__main__":
         last_ping_time = prev_state.get("last_ping_time", 0)
 
         current_time = time.time()
-        fifteen_days_sec = 15 * 24 * 60 * 60
-        do_ping = (current_time - last_ping_time) >= fifteen_days_sec
+        do_ping = (current_time - last_ping_time) >= (15 * 24 * 60 * 60)
 
         combined_files = {}
         all_trash_files = {}
         total_files = 0
         total_videos = 0
         total_deleted_bin = 0
-        acc_summary = []
-        pings_done = False
+        accounts_chart_data = []
 
         for acc in mega_accounts:
             try:
-                time.sleep(5) # ప్రతి అకౌంట్ మధ్య 5 సెకన్ల విరామం
-                files, trash, t_files, v_count, d_bin, ping_ok = scan_mega_account(acc["email"], acc["pass"], do_ping)
+                time.sleep(5)
+                files, trash, t_files, v_count, d_bin, _ = scan_mega_account(acc["email"], acc["pass"], do_ping)
                 combined_files.update(files)
                 all_trash_files.update(trash)
                 total_files += t_files
                 total_videos += v_count
                 total_deleted_bin += d_bin
                 
-                ping_txt = " (🔄 15-Day Ping Done)" if ping_ok else ""
-                acc_summary.append(f"• *{acc['name']}:* `{v_count}` Videos (`{t_files}` Files){ping_txt}")
-                if ping_ok:
-                    pings_done = True
+                accounts_chart_data.append({"name": acc["name"], "videos": v_count, "files": t_files})
             except Exception as e:
-                acc_summary.append(f"• *{acc['name']}:* ❌ Error (`{str(e)}`)")
-
-        if pings_done or last_ping_time == 0:
-            last_ping_time = current_time
+                accounts_chart_data.append({"name": acc["name"], "videos": 0, "files": 0})
 
         if total_videos > target_video_count:
             target_video_count = total_videos
 
-        deleted_keys = set(prev_files.keys()) - set(combined_files.keys())
-        current_missing_videos = dict(stored_missing_videos)
+        chart_image_url = generate_cinematic_dashboard_image(accounts_chart_data, total_files, total_videos, target_video_count)
 
-        for key in deleted_keys:
-            file_data = prev_files[key]
-            if file_data.get("is_video"):
-                file_id = file_data.get("file_id")
-                if file_id in all_trash_files:
-                    reason = "🗑️ Moved to Rubbish Bin (Manual Delete)"
-                else:
-                    reason = "⚠️ Permanently Removed / DMCA Takedown / Account Restriction"
-
-                current_missing_videos[key] = {
-                    "name": file_data.get("name"),
-                    "account": file_data.get("email"),
-                    "reason": reason
-                }
-
-        if total_videos >= target_video_count:
-            current_missing_videos = {}
-
-        if total_videos < target_video_count:
-            missing_count = target_video_count - total_videos
-            alert_msg = (
-                "🚨🦺 *EMERGENCY ALERT! VIDEO DELETED!* 🦺🚨\n\n"
-                f"📉 *ప్రస్తుత వీడియోలు:* `{total_videos}`\n"
-                f"🎯 *Target కౌంట్:* `{target_video_count}`\n"
-                f"❌ *తగ్గిన వీడియోల సంఖ్య:* `{missing_count}`\n\n"
-                "📌 *డిలీట్ అయిన వీడియోల వివరాలు:*\n"
-            )
-            if current_missing_videos:
-                for idx, (k, info) in enumerate(current_missing_videos.items(), 1):
-                    alert_msg += (
-                        f"\n*{idx}. ఫైల్ పేరు:* `{info['name']}`\n"
-                        f"   📧 *అకౌంట్:* `{info['account']}`\n"
-                        f"   ❓ *కారణం:* {info['reason']}\n"
-                    )
-            send_telegram_message(alert_msg)
-
-        report_text = (
-            f"📊 *MEGA CLOUD LIVE REPORT ({len(mega_accounts)} ACCOUNTS)* 📊\n\n"
-            f"📁 *All Files:* `{total_files}` | 🎬 *Videos:* `{total_videos}`\n"
-            f"🎯 *Target Video Count:* `{target_video_count}`\n"
+        caption = (
+            "🌌 *MEGA CLOUD LIVE DASHBOARD*\n\n"
+            f"📁 *Total Files:* `{total_files}`\n"
+            f"🎬 *Total Videos:* `{total_videos}` / `{target_video_count}`\n"
             f"🗑️ *Rubbish Bin:* `{total_deleted_bin}`\n\n"
-            "👤 *అకౌంట్ల వివరాలు:*\n" + "\n".join(acc_summary)
+            "🟢 *Status:* All Accounts Synced & Operational"
         )
-        send_telegram_message(report_text)
+
+        send_telegram_photo(chart_image_url, caption)
 
         new_state = {
             "files": combined_files,
             "max_video_count": target_video_count,
             "total_files": total_files,
-            "missing_videos": current_missing_videos,
-            "last_ping_time": last_ping_time
+            "missing_videos": stored_missing_videos,
+            "last_ping_time": current_time
         }
         save_state(new_state)
 
     except Exception as e:
         send_telegram_message(f"❌ *Error Occurred:* `{str(e)}`")
-                             
+                    
