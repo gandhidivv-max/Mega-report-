@@ -74,9 +74,19 @@ def perform_keep_alive(mega_instance, email):
 
 def scan_mega_account(email, password, do_ping):
     mega = Mega()
-    m = mega.login(email, password)
+    m = None
     
-    # Trash ID సరిగ్గా హ్యాండిల్ చేయడం
+    # Mega API Rate limit ను అధిగమించడానికి 3 సార్లు లాగిన్ రీట్రై లాజిక్
+    for attempt in range(3):
+        try:
+            m = mega.login(email, password)
+            if m:
+                break
+        except Exception as e:
+            if attempt == 2:
+                raise e
+            time.sleep(5) # ఓపెన్ సెషన్ కోసం 5 సెకన్ల విరామం
+    
     trash_id = getattr(m, 'trash_id', None) or getattr(m, 'trash_folder', None)
     
     ping_status = False
@@ -92,7 +102,6 @@ def scan_mega_account(email, password, do_ping):
 
     if isinstance(files_data, dict):
         for file_id, file_info in files_data.items():
-            # Data Parsing Safe Check
             if isinstance(file_info, dict) and file_info.get('t') == 0:
                 attr = file_info.get('a', {})
                 file_name = 'Unknown'
@@ -145,7 +154,7 @@ if __name__ == "__main__":
 
         for acc in mega_accounts:
             try:
-                time.sleep(3) # Mega Rate limit తగ్గించడానికి విరామం
+                time.sleep(5) # ప్రతి అకౌంట్ మధ్య 5 సెకన్ల విరామం
                 files, trash, t_files, v_count, d_bin, ping_ok = scan_mega_account(acc["email"], acc["pass"], do_ping)
                 combined_files.update(files)
                 all_trash_files.update(trash)
@@ -225,4 +234,4 @@ if __name__ == "__main__":
 
     except Exception as e:
         send_telegram_message(f"❌ *Error Occurred:* `{str(e)}`")
-        
+                             
