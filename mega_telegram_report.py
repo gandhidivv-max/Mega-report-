@@ -13,22 +13,25 @@ video_extensions = ('.mp4', '.mkv', '.avi', '.mov', '.flv', '.webm', '.3gp', '.m
 
 def get_all_mega_credentials():
     accounts = []
-    for key, value in os.environ.items():
-        if key.startswith("MEGA_EMAIL_"):
-            suffix = key.replace("MEGA_EMAIL_", "")
-            pass_key = f"MEGA_PASSWORD_{suffix}"
-            password = os.environ.get(pass_key)
-            if value and password:
-                accounts.append({
-                    "email": value,
-                    "pass": password,
-                    "name": f"Account {suffix}"
-                })
-    if not accounts:
-        single_email = os.environ.get("MEGA_EMAIL")
-        single_pass = os.environ.get("MEGA_PASSWORD")
-        if single_email and single_pass:
-            accounts.append({"email": single_email, "pass": single_pass, "name": "Account 1"})
+    
+    # Account 1 Check
+    e1 = os.environ.get("MEGA_EMAIL_1") or os.environ.get("MEGA_EMAIL")
+    p1 = os.environ.get("MEGA_PASSWORD_1") or os.environ.get("MEGA_PASSWORD")
+    if e1 and p1:
+        accounts.append({"email": e1, "pass": p1, "name": "Account 1"})
+
+    # Account 2 Check
+    e2 = os.environ.get("MEGA_EMAIL_2")
+    p2 = os.environ.get("MEGA_PASSWORD_2")
+    if e2 and p2:
+        accounts.append({"email": e2, "pass": p2, "name": "Account 2"})
+
+    # Account 3 Check
+    e3 = os.environ.get("MEGA_EMAIL_3")
+    p3 = os.environ.get("MEGA_PASSWORD_3")
+    if e3 and p3:
+        accounts.append({"email": e3, "pass": p3, "name": "Account 3"})
+
     return accounts
 
 def load_state():
@@ -210,7 +213,6 @@ if __name__ == "__main__":
                 
                 accounts_chart_data.append({"name": acc["name"], "videos": v_count, "files": t_files})
             except Exception as e:
-                # లాగిన్ లేదా స్కాన్ ఫెయిల్ అయితే ఎర్రర్ మెసేజ్ టెలిగ్రామ్‌కు పంపుతుంది
                 send_telegram_message(f"⚠️ *{acc['name']} Login Failed:* `{str(e)}`")
                 accounts_chart_data.append({"name": acc["name"], "videos": 0, "files": 0})
 
