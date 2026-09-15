@@ -181,11 +181,10 @@ if __name__ == "__main__":
     try:
         mega_accounts = get_all_mega_credentials()
         if not mega_accounts:
-            send_telegram_message("❌ *Error:* Credentials సరిగ్గా లేవు!")
+            send_telegram_message("❌ *Error:* GitHub Secrets లో MEGA_EMAIL, MEGA_PASSWORD దొరకలేదు!")
             exit()
 
         prev_state = load_state()
-        prev_files = prev_state.get("files", {})
         target_video_count = prev_state.get("max_video_count", 0)
         stored_missing_videos = prev_state.get("missing_videos", {})
         last_ping_time = prev_state.get("last_ping_time", 0)
@@ -202,7 +201,6 @@ if __name__ == "__main__":
 
         for acc in mega_accounts:
             try:
-                time.sleep(5)
                 files, trash, t_files, v_count, d_bin, _ = scan_mega_account(acc["email"], acc["pass"], do_ping)
                 combined_files.update(files)
                 all_trash_files.update(trash)
@@ -212,6 +210,8 @@ if __name__ == "__main__":
                 
                 accounts_chart_data.append({"name": acc["name"], "videos": v_count, "files": t_files})
             except Exception as e:
+                # లాగిన్ లేదా స్కాన్ ఫెయిల్ అయితే ఎర్రర్ మెసేజ్ టెలిగ్రామ్‌కు పంపుతుంది
+                send_telegram_message(f"⚠️ *{acc['name']} Login Failed:* `{str(e)}`")
                 accounts_chart_data.append({"name": acc["name"], "videos": 0, "files": 0})
 
         if total_videos > target_video_count:
@@ -230,7 +230,7 @@ if __name__ == "__main__":
             f"📁 *Total Files:* `{total_files}`\n"
             f"🎬 *Total Videos:* `{total_videos}` / `{target_video_count}`\n"
             f"🗑️ *Rubbish Bin:* `{total_deleted_bin}`\n\n"
-            "🟢 *Status:* All Accounts Synced & Operational"
+            "🟢 *Status:* Sync Completed"
         )
 
         send_telegram_photo(chart_image_url, caption)
@@ -245,4 +245,5 @@ if __name__ == "__main__":
         save_state(new_state)
 
     except Exception as e:
-        send_telegram_message(f"❌ *Error Occurred:* `{str(e)}`")
+        send_telegram_message(f"❌ *Script Error:* `{str(e)}`")
+    
