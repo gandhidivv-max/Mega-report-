@@ -13,8 +13,6 @@ video_extensions = ('.mp4', '.mkv', '.avi', '.mov', '.flv', '.webm', '.3gp', '.m
 
 def get_all_mega_credentials():
     accounts = []
-    
-    # Explicit mapping for sequentially numbered secrets
     i = 1
     while True:
         e = os.environ.get(f"MEGA_EMAIL_{i}") or (os.environ.get("MEGA_EMAIL") if i == 1 else None)
@@ -24,14 +22,14 @@ def get_all_mega_credentials():
             accounts.append({"email": e.strip(), "pass": p.strip(), "name": f"Account {i}"})
             i += 1
         else:
-            # Check if there is any other account index remaining
-            if i > 10:  # Check up to 10 accounts safety limit
+            if i > 10:
                 break
             i += 1
 
     print(f"Total Accounts Detected to Scan: {len(accounts)}")
     for acc in accounts:
         print(f" -> Found: {acc['name']} ({acc['email'][:3]}***)")
+        
     return accounts
 
 def load_state():
@@ -51,17 +49,45 @@ def save_state(state):
         print(f"Error saving state: {e}")
 
 def send_telegram_message(text):
+    """
+    Telegram message length limit is 4096 chars.
+    If text exceeds 3800 chars, split and send in multiple chunks.
+    """
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("Telegram Credentials Missing!")
         return
+        
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        'chat_id': TELEGRAM_CHAT_ID,
-        'text': text,
-        'parse_mode': 'HTML'
-    }
-    res = requests.post(url, data=payload)
-    print("Telegram Response:", res.text)
+    
+    # 3800 characters limit safety margin
+    MAX_LEN = 3800
+    
+    if len(text) <= MAX_LEN:
+        chunks = [text]
+    else:
+        # Split by lines to avoid breaking HTML tags
+        lines = text.split("\n")
+        chunks = []
+        current_chunk = ""
+        
+        for line in lines:
+            if len(current_chunk) + len(line) + 1 > MAX_LEN:
+                chunks.append(current_chunk)
+                current_chunk = line + "\n"
+            else:
+                current_chunk += line + "\n"
+        if current_chunk:
+            chunks.append(current_chunk)
+
+    for idx, chunk in enumerate(chunks):
+        payload = {
+            'chat_id': TELEGRAM_CHAT_ID,
+            'text': chunk,
+            'parse_mode': 'HTML'
+        }
+        res = requests.post(url, data=payload)
+        print(f"Telegram Part {idx+1}/{len(chunks)} Response:", res.text)
+        time.sleep(1)  # Delay between parts
 
 def scan_mega_account(account_info):
     email = account_info["email"]
@@ -206,6 +232,7 @@ if __name__ == "__main__":
 
     final_report = "\n".join(report_lines)
 
+    # Send chunked message safely to Telegram
     send_telegram_message(final_report)
 
     save_state({
@@ -213,4 +240,4 @@ if __name__ == "__main__":
         "max_video_count": total_videos,
         "total_files": total_files
     })
-                
+    
