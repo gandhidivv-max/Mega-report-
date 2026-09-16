@@ -1,48 +1,51 @@
-name: Run Mega Automation
+name: MEGA Cloud Report Automation
 
 on:
-  push:
-    branches: [ main ]
+  # GitHub Dashboard నుండి మీరు మాన్యువల్‌గా రన్ చేయడానికి మాత్రమే (Run workflow button)
   workflow_dispatch:
 
 jobs:
-  run-mega:
+  run-mega-report:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
 
+    steps:
+      # 1. రిపోజిటరీ కోడ్‌ను చెక్అవుట్ చేయడం
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. Python Environment సెటప్ చేయడం
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
+      # 3. అవసరమైన Python Packages (Dependencies) ఇన్‌స్టాల్ చేయడం
       - name: Install Dependencies
         run: |
-          pip install --upgrade pip
-          pip install pycryptodome mega.py requests pillow
+          python -m pip install --upgrade pip
+          pip install mega.py requests
 
-      - name: Run Mega Automation Script
+      # 4. Python స్క్రిప్ట్ రన్ చేయడం
+      - name: Run MEGA Telegram Report Script
         env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           MEGA_EMAIL_1: ${{ secrets.MEGA_EMAIL_1 }}
           MEGA_PASSWORD_1: ${{ secrets.MEGA_PASSWORD_1 }}
           MEGA_EMAIL_2: ${{ secrets.MEGA_EMAIL_2 }}
           MEGA_PASSWORD_2: ${{ secrets.MEGA_PASSWORD_2 }}
           MEGA_EMAIL_3: ${{ secrets.MEGA_EMAIL_3 }}
           MEGA_PASSWORD_3: ${{ secrets.MEGA_PASSWORD_3 }}
-          MEGA_EMAIL: ${{ secrets.MEGA_EMAIL }}
-          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python mega_telegram_report.py
+        run: |
+          python mega_telegram_report.py
 
+      # 5. mega_state.json ని Auto-Commit చేయడం
       - name: Commit and Push Updated State File
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
           git add mega_state.json
-          git commit -m "Update mega_state.json" || exit 0
-          git push
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update mega_state.json state [skip ci]" && git push)
           
