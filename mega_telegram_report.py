@@ -44,25 +44,26 @@ def save_state(state):
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=4)
 
-def send_telegram_photo(photo_url, caption_text):
+def send_telegram_photo_only(photo_url):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "photo": photo_url,
-        "caption": caption_text,
-        "parse_mode": "Markdown"
+        "photo": photo_url
     }
-    res = requests.post(url, json=payload)
-    # ఒకవేళ ఇమేజ్ క్యాప్షన్ పెద్దదై పోతే నేరుగా మెసేజ్ పంపుతుంది
-    if res.status_code != 200:
-        url_msg = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        requests.post(url_msg, json={"chat_id": TELEGRAM_CHAT_ID, "text": caption_text, "parse_mode": "Markdown"})
+    requests.post(url, json=payload)
 
-def generate_clean_chart(accounts_data):
+def generate_complete_image_dashboard(accounts_data, total_files, total_videos, recently_added, recently_deleted, folder_summary):
     labels = [acc["name"] for acc in accounts_data]
     video_counts = [acc["videos"] for acc in accounts_data]
+
+    # ఫోల్డర్ల వివరాలను ఇమేజ్ పై కనిపించేలా టెక్స్ట్ గా ఫార్మాట్ చేయడం
+    folder_text_lines = []
+    for f_name, stats in folder_summary.items():
+        folder_text_lines.append(f"{f_name}: {stats['videos']} Vids ({stats['files']} Files)")
+    
+    folder_str = " | ".join(folder_text_lines[:4]) # గరిష్టంగా 4 ఫోల్డర్లను సబ్‌టైటిల్‌లో చూపిస్తుంది
 
     chart_config = {
         "type": "bar",
@@ -85,6 +86,25 @@ def generate_clean_chart(accounts_data):
         },
         "options": {
             "plugins": {
+                "title": {
+                    "display": True,
+                    "text": "🌌 MEGA CLOUD LIVE DASHBOARD",
+                    "color": "#ffffff",
+                    "font": {"size": 22, "weight": "bold"},
+                    "padding": {"top": 10, "bottom": 10}
+                },
+                "subtitle": {
+                    "display": True,
+                    "text": [
+                        f"Total Files: {total_files}   |   Total Videos: {total_videos}",
+                        f"Recently Added: +{recently_added}   |   Recently Deleted: {recently_deleted}",
+                        "--------------------------------------------------------------------------------",
+                        f"FOLDERS: {folder_str}"
+                    ],
+                    "color": "#38bdf8",
+                    "font": {"size": 13, "weight": "bold"},
+                    "padding": {"bottom": 25}
+                },
                 "legend": {"display": False},
                 "datalabels": {"display": True}
             },
@@ -96,14 +116,14 @@ def generate_clean_chart(accounts_data):
                 "y": {
                     "ticks": {"color": "#a0aec0", "font": {"size": 12}},
                     "grid": {"color": "rgba(255, 255, 255, 0.1)"},
-                    "grace": "20%"
+                    "grace": "25%"
                 }
             }
         }
     }
 
     encoded_chart = urllib.parse.quote(json.dumps(chart_config))
-    return f"https://quickchart.io/chart?c={encoded_chart}&bkg=%230f172a&w=800&h=400&devicePixelRatio=2"
+    return f"https://quickchart.io/chart?c={encoded_chart}&bkg=%230f172a&w=850&h=550&devicePixelRatio=2"
 
 def scan_mega_account(email, password):
     mega = Mega()
@@ -129,14 +149,12 @@ def scan_mega_account(email, password):
     deleted_bin_count = 0
 
     if isinstance(files_data, dict):
-        # 1. ఫోల్డర్ పేర్ల మ్యాపింగ్
         for node_id, node_info in files_data.items():
             if isinstance(node_info, dict) and node_info.get('t') == 1:
                 attr = node_info.get('a', {})
                 if isinstance(attr, dict):
                     folder_map[node_id] = attr.get('n', 'Unknown Folder')
 
-        # 2. ఫైళ్ల స్కాన్
         for file_id, file_info in files_data.items():
             if isinstance(file_info, dict) and file_info.get('t') == 0:
                 attr = file_info.get('a', {})
@@ -150,7 +168,7 @@ def scan_mega_account(email, password):
                     deleted_bin_count += 1
                 else:
                     total_files += 1
-                    folder_name = folder_map.get(parent_id, "Root / Main")
+                    folder_name = folder_map.get(parent_id, "Root")
                     is_vid = str(file_name).lower().endswith(video_extensions)
                     
                     unique_key = f"{email}_{file_id}"
@@ -194,19 +212,16 @@ if __name__ == "__main__":
 
         # Recently Added & Deleted Calculation
         recently_added = 0
-        recently_added_names = []
         for k, v in combined_files.items():
-            if k not in prev_files:
-                if v.get("is_video"):
-                    recently_added += 1
-                    recently_added_names.append(v.get("name"))
+            if k not in prev_files and v.get("is_video"):
+                recently_added += 1
 
         recently_deleted = 0
         for k, v in prev_files.items():
             if k not in combined_files:
                 recently_deleted += 1
 
-        # Separate Folders Wise Metrics
+        # Folders Breakdown Calculation
         folder_summary = {}
         for k, v in combined_files.items():
             f_name = v.get("folder", "Root")
@@ -216,19 +231,18 @@ if __name__ == "__main__":
             if v.get("is_video"):
                 folder_summary[f_name]["videos"] += 1
 
-        # Telegram Message Formatting
-        caption = "🌌 *MEGA CLOUD FULL REPORT*\n\n"
-        caption += f"📁 *Total Files:* `{total_files}`\n"
-        caption += f"🎬 *Total Videos:* `{total_videos}`\n"
-        caption += f"➕ *Recently Added:* `+{recently_added}`\n"
-        caption += f"🗑️ *Recently Deleted / Trash:* `{recently_deleted + total_deleted_bin}`\n\n"
+        # Generate Full All-in-One Dashboard Image
+        chart_url = generate_complete_image_dashboard(
+            accounts_chart_data, 
+            total_files, 
+            total_videos, 
+            recently_added, 
+            recently_deleted + total_deleted_bin,
+            folder_summary
+        )
 
-        caption += "📂 *FOLDERS BREAKDOWN:*\n"
-        for f_name, stats in folder_summary.items():
-            caption += f"• *{f_name}*: {stats['videos']} Videos ({stats['files']} Total Files)\n"
-
-        chart_url = generate_clean_chart(accounts_chart_data)
-        send_telegram_photo(chart_url, caption)
+        # కేవలం ఇమేజ్ మాత్రమే Telegram కి పంపుతుంది (No Text Caption)
+        send_telegram_photo_only(chart_url)
 
         new_state = {
             "files": combined_files,
