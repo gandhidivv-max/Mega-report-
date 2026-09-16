@@ -44,35 +44,21 @@ def save_state(state):
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=4)
 
-def send_telegram_message(message):
+def send_telegram_photo_only(photo_url):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("❌ Telegram credentials missing in script execution!")
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    res = requests.post(url, json=payload)
-    print(f"Telegram Message Status: {res.status_code}, Response: {res.text}")
-
-def send_telegram_photo(photo_url, caption):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("❌ Telegram credentials missing in script execution!")
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "photo": photo_url,
-        "caption": caption,
-        "parse_mode": "Markdown"
+        "photo": photo_url
     }
-    res = requests.post(url, json=payload)
-    print(f"Telegram Photo Status: {res.status_code}, Response: {res.text}")
-    if res.status_code != 200:
-        send_telegram_message(caption)
+    requests.post(url, json=payload)
 
-def generate_cinematic_dashboard_image(accounts_data, total_files, total_videos, target_count, total_bin):
+def generate_all_in_one_dashboard(accounts_data, total_files, total_videos, target_count, recently_added, recently_deleted):
     labels = [acc["name"] for acc in accounts_data]
     video_counts = [acc["videos"] for acc in accounts_data]
 
+    # అన్ని వివరాలను ఇమేజ్ యొక్క Subtitle మరియు Header లలో చేర్చడం జరిగింది
     chart_config = {
         "type": "bar",
         "data": {
@@ -98,13 +84,16 @@ def generate_cinematic_dashboard_image(accounts_data, total_files, total_videos,
                     "display": True,
                     "text": "MEGA CLOUD LIVE DASHBOARD",
                     "color": "#ffffff",
-                    "font": {"size": 20, "weight": "bold"}
+                    "font": {"size": 22, "weight": "bold"}
                 },
                 "subtitle": {
                     "display": True,
-                    "text": f"Files: {total_files}  |  Videos: {total_videos}/{target_count}  |  Trash: {total_bin}",
+                    "text": [
+                        f"Files: {total_files}  |  Videos: {total_videos}/{target_count}",
+                        f"Recently Added: +{recently_added}  |  Recently Deleted (Trash): {recently_deleted}"
+                    ],
                     "color": "#38bdf8",
-                    "font": {"size": 15, "weight": "bold"},
+                    "font": {"size": 14, "weight": "bold"},
                     "padding": {"bottom": 20}
                 },
                 "legend": {"display": False},
@@ -118,17 +107,16 @@ def generate_cinematic_dashboard_image(accounts_data, total_files, total_videos,
                 "y": {
                     "ticks": {"color": "#a0aec0", "font": {"size": 12}},
                     "grid": {"color": "rgba(255, 255, 255, 0.1)"},
-                    "grace": "20%"
+                    "grace": "25%"
                 }
             }
         }
     }
 
     encoded_chart = urllib.parse.quote(json.dumps(chart_config))
-    image_url = f"https://quickchart.io/chart?c={encoded_chart}&bkg=%230f172a&w=800&h=450&devicePixelRatio=2"
-    return image_url
+    return f"https://quickchart.io/chart?c={encoded_chart}&bkg=%230f172a&w=800&h=500&devicePixelRatio=2"
 
-def scan_mega_account(email, password, do_ping):
+def scan_mega_account(email, password):
     mega = Mega()
     m = None
     
@@ -176,25 +164,19 @@ def scan_mega_account(email, password, do_ping):
                     if str(file_name).lower().endswith(video_extensions):
                         video_count += 1
 
-    return account_files, trash_files, total_files, video_count, deleted_bin_count, False
+    return account_files, trash_files, total_files, video_count, deleted_bin_count
 
 if __name__ == "__main__":
     try:
         mega_accounts = get_all_mega_credentials()
         if not mega_accounts:
-            send_telegram_message("❌ *Error:* GitHub Secrets లో MEGA_EMAIL, MEGA_PASSWORD దొరకలేదు!")
             exit()
 
         prev_state = load_state()
+        prev_files = prev_state.get("files", {})
         target_video_count = prev_state.get("max_video_count", 0)
-        stored_missing_videos = prev_state.get("missing_videos", {})
-        last_ping_time = prev_state.get("last_ping_time", 0)
-
-        current_time = time.time()
-        do_ping = (current_time - last_ping_time) >= (15 * 24 * 60 * 60)
 
         combined_files = {}
-        all_trash_files = {}
         total_files = 0
         total_videos = 0
         total_deleted_bin = 0
@@ -202,48 +184,45 @@ if __name__ == "__main__":
 
         for acc in mega_accounts:
             try:
-                files, trash, t_files, v_count, d_bin, _ = scan_mega_account(acc["email"], acc["pass"], do_ping)
+                files, trash, t_files, v_count, d_bin = scan_mega_account(acc["email"], acc["pass"])
                 combined_files.update(files)
-                all_trash_files.update(trash)
                 total_files += t_files
                 total_videos += v_count
                 total_deleted_bin += d_bin
-                
                 accounts_chart_data.append({"name": acc["name"], "videos": v_count, "files": t_files})
-            except Exception as e:
-                send_telegram_message(f"⚠️ *{acc['name']} Login Failed:* `{str(e)}`")
+            except Exception:
                 accounts_chart_data.append({"name": acc["name"], "videos": 0, "files": 0})
+
+        # Recently Added Videos సంఖ్యను లెక్కించడం
+        recently_added = 0
+        for k, v in combined_files.items():
+            if k not in prev_files and v.get("is_video"):
+                recently_added += 1
 
         if total_videos > target_video_count:
             target_video_count = total_videos
 
-        chart_image_url = generate_cinematic_dashboard_image(
+        # ఇమేజ్ URL జనరేషన్
+        chart_image_url = generate_all_in_one_dashboard(
             accounts_chart_data, 
             total_files, 
             total_videos, 
             target_video_count, 
+            recently_added, 
             total_deleted_bin
         )
 
-        caption = (
-            "🌌 *MEGA CLOUD LIVE DASHBOARD*\n\n"
-            f"📁 *Total Files:* `{total_files}`\n"
-            f"🎬 *Total Videos:* `{total_videos}` / `{target_video_count}`\n"
-            f"🗑️ *Rubbish Bin:* `{total_deleted_bin}`\n\n"
-            "🟢 *Status:* Sync Completed"
-        )
-
-        send_telegram_photo(chart_image_url, caption)
+        # కేవలం ఇమేజ్ మాత్రమే పంపబడుతుంది
+        send_telegram_photo_only(chart_image_url)
 
         new_state = {
             "files": combined_files,
             "max_video_count": target_video_count,
             "total_files": total_files,
-            "missing_videos": stored_missing_videos,
-            "last_ping_time": current_time
+            "last_ping_time": time.time()
         }
         save_state(new_state)
 
-    except Exception as e:
-        send_telegram_message(f"❌ *Script Error:* `{str(e)}`")
-    
+    except Exception:
+        pass
+        
