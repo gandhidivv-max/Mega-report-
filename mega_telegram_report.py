@@ -57,12 +57,12 @@ def generate_quickchart_dashboard(accounts_data, total_files, total_videos, rece
     labels = [acc["name"] for acc in accounts_data]
     video_counts = [acc["videos"] for acc in accounts_data]
 
-    # ఫోల్డర్ల లిస్ట్‌ని సబ్‌టైటిల్ లైన్లుగా ఫార్మాట్ చేయడం
+    # ఫోల్డర్ల వివరాలను ఒకే లైన్ లోకి తీసుకురావడం
     folder_lines = []
     for f_name, stats in folder_summary.items():
-        folder_lines.append(f"• {f_name}: {stats['videos']} Vids ({stats['files']} Files)")
+        folder_lines.append(f"{f_name}: {stats['videos']} Vids ({stats['files']} Files)")
     
-    folder_text = "   |   ".join(folder_lines[:3]) # టాప్ 3 ఫోల్డర్లు ఒకే లైన్లో
+    folder_str = "  |  ".join(folder_lines[:3]) if folder_lines else "None"
 
     chart_config = {
         "type": "bar",
@@ -72,57 +72,61 @@ def generate_quickchart_dashboard(accounts_data, total_files, total_videos, rece
                 "label": "Videos",
                 "data": video_counts,
                 "backgroundColor": ["#00f2fe", "#e11d73", "#ff9a00"],
-                "borderRadius": 6,
+                "borderRadius": 8,
                 "datalabels": {
-                    "align": "end",
+                    "align": "top",
                     "anchor": "end",
                     "color": "#ffffff",
-                    "font": {"size": 18, "weight": "bold"}
+                    "font": {"size": 16, "weight": "bold"}
                 }
             }]
         },
         "options": {
             "layout": {
-                "padding": {"top": 30, "left": 20, "right": 20, "bottom": 10}
+                "padding": {
+                    "top": 30,
+                    "bottom": 15,
+                    "left": 25,
+                    "right": 25
+                }
             },
             "plugins": {
                 "title": {
                     "display": True,
-                    "text": "⚡ MEGA CLOUD LIVE DASHBOARD",
-                    "color": "#ffffff",
-                    "font": {"size": 22, "weight": "bold"}
-                },
-                "subtitle": {
-                    "display": True,
                     "text": [
-                        f"📁 Total Files: {total_files}   |   🎬 Total Videos: {total_videos}",
-                        f"➕ Added: +{recently_added}   |   🗑️ Deleted: {recently_deleted}",
-                        "───────────────────────────────────────────",
-                        f"📂 FOLDERS: {folder_text}"
+                        "MEGA CLOUD LIVE DASHBOARD",
+                        "───────────────────────────────────────────────────",
+                        f"Files: {total_files}   |   Videos: {total_videos}   |   Added: +{recently_added}   |   Deleted: {recently_deleted}",
+                        f"Folders: {folder_str}",
+                        "───────────────────────────────────────────────────"
                     ],
-                    "color": "#38bdf8",
-                    "font": {"size": 13, "weight": "bold"},
+                    "color": "#ffffff",
+                    "font": {"size": 14, "weight": "bold"},
                     "padding": {"bottom": 25}
                 },
                 "legend": {"display": False},
-                "datalabels": {"display": True}
+                "datalabels": {
+                    "display": True,
+                    "color": "#ffffff"
+                }
             },
             "scales": {
                 "x": {
-                    "ticks": {"color": "#ffffff", "font": {"size": 14, "weight": "bold"}},
+                    "ticks": {"color": "#00f2fe", "font": {"size": 14, "weight": "bold"}},
                     "grid": {"display": False}
                 },
                 "y": {
                     "ticks": {"color": "#94a3b8", "font": {"size": 12}},
                     "grid": {"color": "rgba(255, 255, 255, 0.1)"},
-                    "grace": "20%"
+                    "grace": "25%"
                 }
             }
         }
     }
 
     encoded_chart = urllib.parse.quote(json.dumps(chart_config))
-    return f"https://quickchart.io/chart?c={encoded_chart}&bkg=%230f172a&w=850&h=520&devicePixelRatio=2"
+    # Height 650px పెంచడం వల్ల వివరాలన్నీ ఇమేజ్ లోనే స్పష్టంగా డిస్‌ప్లే అవుతాయి
+    return f"https://quickchart.io/chart?c={encoded_chart}&bkg=%230f172a&w=850&h=650&devicePixelRatio=2"
 
 def scan_mega_account(email, password):
     mega = Mega()
@@ -214,7 +218,6 @@ if __name__ == "__main__":
             if v.get("is_video"):
                 folder_summary[f_name]["videos"] += 1
 
-        # Dashboard URL తయారు చేయటం
         chart_url = generate_quickchart_dashboard(
             accounts_chart_data, 
             total_files, 
@@ -233,4 +236,4 @@ if __name__ == "__main__":
         })
     except Exception:
         pass
-                        
+    
