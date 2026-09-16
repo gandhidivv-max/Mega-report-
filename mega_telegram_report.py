@@ -2,6 +2,7 @@ import os
 import json
 import time
 import requests
+import urllib.parse
 from mega import Mega
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -42,98 +43,90 @@ def save_state(state):
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=4)
 
-def send_telegram_photo(image_bytes):
+def send_telegram_photo_url(photo_url):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-    files = {'photo': ('dashboard.png', image_bytes, 'image/png')}
-    payload = {'chat_id': TELEGRAM_CHAT_ID}
-    requests.post(url, data=payload, files=files)
-
-def generate_html_dashboard_image(accounts_data, total_files, total_videos, recently_added, recently_deleted, folder_summary):
-    # ఫోల్డర్ల వివరాల HTML
-    folder_items_html = ""
-    for f_name, stats in list(folder_summary.items())[:4]:
-        folder_items_html += f"""
-        <div style="background: #1e293b; padding: 8px 12px; border-radius: 6px; font-size: 13px; color: #cbd5e1;">
-            📁 <strong style="color: #ffffff;">{f_name}</strong>: {stats['videos']} Videos <span style="color: #64748b;">({stats['files']} Files)</span>
-        </div>
-        """
-
-    # అకౌంట్ బార్ చార్ట్ HTML
-    max_vids = max([acc["videos"] for acc in accounts_data] + [1])
-    bars_html = ""
-    colors = ["#00f2fe", "#e11d73", "#ff9a00"]
-    for i, acc in enumerate(accounts_data):
-        height_pct = int((acc["videos"] / max_vids) * 100)
-        bars_html += f"""
-        <div style="display: flex; flex-direction: column; align-items: center; flex: 1;">
-            <div style="color: #ffffff; font-weight: bold; margin-bottom: 5px; font-size: 14px;">{acc['videos']}</div>
-            <div style="width: 45px; height: 120px; background: #1e293b; border-radius: 6px; display: flex; align-items: flex-end; overflow: hidden;">
-                <div style="width: 100%; height: {height_pct}%; background: {colors[i % len(colors)]}; border-radius: 4px;"></div>
-            </div>
-            <div style="color: #94a3b8; margin-top: 8px; font-size: 12px; font-weight: bold;">{acc['name']}</div>
-        </div>
-        """
-
-    # పూర్తి UI క్యాన్వాస్ Template
-    html_template = f"""
-    <div style="width: 650px; background: #0f172a; padding: 25px; font-family: Arial, sans-serif; color: white; border-radius: 12px;">
-        <div style="font-size: 20px; font-weight: bold; margin-bottom: 20px; border-bottom: 2px solid #334155; padding-bottom: 10px; color: #00f2fe;">
-            ⚡ MEGA CLOUD LIVE DASHBOARD
-        </div>
-        
-        <!-- STATS CARDS -->
-        <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-            <div style="flex: 1; background: #1e293b; padding: 12px; border-radius: 8px; border-left: 4px solid #00f2fe;">
-                <div style="font-size: 11px; color: #94a3b8;">TOTAL FILES</div>
-                <div style="font-size: 20px; font-weight: bold; margin-top: 4px;">{total_files}</div>
-            </div>
-            <div style="flex: 1; background: #1e293b; padding: 12px; border-radius: 8px; border-left: 4px solid #e11d73;">
-                <div style="font-size: 11px; color: #94a3b8;">TOTAL VIDEOS</div>
-                <div style="font-size: 20px; font-weight: bold; margin-top: 4px;">{total_videos}</div>
-            </div>
-            <div style="flex: 1; background: #1e293b; padding: 12px; border-radius: 8px; border-left: 4px solid #22c55e;">
-                <div style="font-size: 11px; color: #94a3b8;">ADDED</div>
-                <div style="font-size: 20px; font-weight: bold; color: #22c55e; margin-top: 4px;">+{recently_added}</div>
-            </div>
-            <div style="flex: 1; background: #1e293b; padding: 12px; border-radius: 8px; border-left: 4px solid #ef4444;">
-                <div style="font-size: 11px; color: #94a3b8;">DELETED</div>
-                <div style="font-size: 20px; font-weight: bold; color: #ef4444; margin-top: 4px;">{recently_deleted}</div>
-            </div>
-        </div>
-
-        <!-- FOLDERS BREAKDOWN -->
-        <div style="margin-bottom: 20px;">
-            <div style="font-size: 12px; font-weight: bold; color: #38bdf8; margin-bottom: 8px;">FOLDERS BREAKDOWN</div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                {folder_items_html}
-            </div>
-        </div>
-
-        <!-- GRAPH SECTION -->
-        <div>
-            <div style="font-size: 12px; font-weight: bold; color: #38bdf8; margin-bottom: 12px;">VIDEOS PER ACCOUNT</div>
-            <div style="display: flex; justify-content: space-around; background: #0b1120; padding: 15px; border-radius: 8px;">
-                {bars_html}
-            </div>
-        </div>
-    </div>
-    """
-
-    # HTML ని Image గా మార్చడానికి QuickChart Render API వాడటం
-    render_url = "https://quickchart.io/render"
     payload = {
-        "html": html_template,
-        "width": 700,
-        "height": 550,
-        "devicePixelRatio": 2
+        "chat_id": TELEGRAM_CHAT_ID,
+        "photo": photo_url
     }
+    requests.post(url, json=payload)
+
+def generate_svg_dashboard_url(accounts_data, total_files, total_videos, recently_added, recently_deleted, folder_summary):
+    # ఫోల్డర్ వివరాలు
+    folder_text_list = []
+    for f_name, stats in list(folder_summary.items())[:3]:
+        folder_text_list.append(f"{f_name}: {stats['videos']} Vids")
+    folder_str = "  |  ".join(folder_text_list) if folder_text_list else "None"
+
+    # SVG గ్రాఫ్ బార్లు క్రియేట్ చేయడం
+    max_vids = max([acc["videos"] for acc in accounts_data] + [1])
+    bars_svg = ""
+    colors = ["#00f2fe", "#e11d73", "#ff9a00"]
     
-    response = requests.post(render_url, json=payload)
-    if response.status_code == 200:
-        return response.content
-    return None
+    x_pos = 70
+    for i, acc in enumerate(accounts_data):
+        height = int((acc["videos"] / max_vids) * 140)
+        y_pos = 420 - height
+        bar_color = colors[i % len(colors)]
+        
+        bars_svg += f'''
+        <rect x="{x_pos}" y="{y_pos}" width="65" height="{height}" rx="6" fill="{bar_color}" />
+        <text x="{x_pos + 32}" y="{y_pos - 10}" fill="#ffffff" font-size="16" font-weight="bold" text-anchor="middle">{acc['videos']}</text>
+        <text x="{x_pos + 32}" y="445" fill="#94a3b8" font-size="14" font-weight="bold" text-anchor="middle">{acc['name']}</text>
+        '''
+        x_pos += 220
+
+    # పూర్తి SVG Canvas టెంప్లేట్ (Dashboard Card)
+    svg_code = f'''<svg xmlns="http://www.w3.org/2000/svg" width="750" height="480" viewBox="0 0 750 480">
+        <rect width="100%" height="100%" fill="#0f172a"/>
+        
+        <!-- Header Banner -->
+        <rect x="0" y="0" width="750" height="55" fill="#1e293b"/>
+        <text x="25" y="36" fill="#00f2fe" font-size="20" font-family="Arial" font-weight="bold">MEGA CLOUD LIVE DASHBOARD</text>
+        
+        <!-- Stat Cards -->
+        <!-- Total Files -->
+        <rect x="25" y="75" width="160" height="75" rx="8" fill="#1e293b" stroke="#00f2fe" stroke-width="2"/>
+        <text x="40" y="98" fill="#94a3b8" font-size="11" font-family="Arial" font-weight="bold">TOTAL FILES</text>
+        <text x="40" y="132" fill="#ffffff" font-size="22" font-family="Arial" font-weight="bold">{total_files}</text>
+        
+        <!-- Total Videos -->
+        <rect x="200" y="75" width="160" height="75" rx="8" fill="#1e293b" stroke="#e11d73" stroke-width="2"/>
+        <text x="215" y="98" fill="#94a3b8" font-size="11" font-family="Arial" font-weight="bold">TOTAL VIDEOS</text>
+        <text x="215" y="132" fill="#ffffff" font-size="22" font-family="Arial" font-weight="bold">{total_videos}</text>
+        
+        <!-- Added -->
+        <rect x="375" y="75" width="160" height="75" rx="8" fill="#1e293b" stroke="#22c55e" stroke-width="2"/>
+        <text x="390" y="98" fill="#94a3b8" font-size="11" font-family="Arial" font-weight="bold">RECENTLY ADDED</text>
+        <text x="390" y="132" fill="#22c55e" font-size="22" font-family="Arial" font-weight="bold">+{recently_added}</text>
+        
+        <!-- Deleted -->
+        <rect x="550" y="75" width="160" height="75" rx="8" fill="#1e293b" stroke="#ef4444" stroke-width="2"/>
+        <text x="565" y="98" fill="#94a3b8" font-size="11" font-family="Arial" font-weight="bold">DELETED</text>
+        <text x="565" y="132" fill="#ef4444" font-size="22" font-family="Arial" font-weight="bold">{recently_deleted}</text>
+
+        <!-- Folders Section -->
+        <rect x="25" y="165" width="685" height="45" rx="6" fill="#1e293b"/>
+        <text x="40" y="192" fill="#38bdf8" font-size="13" font-family="Arial" font-weight="bold">FOLDERS: <tspan fill="#ffffff">{folder_str}</tspan></text>
+
+        <!-- Graph Container -->
+        <text x="25" y="240" fill="#38bdf8" font-size="13" font-family="Arial" font-weight="bold">VIDEOS PER ACCOUNT</text>
+        <rect x="25" y="255" width="685" height="200" rx="8" fill="#0b1120"/>
+        
+        <!-- Horizontal Grid Lines -->
+        <line x1="45" y1="420" x2="690" y2="420" stroke="#334155" stroke-width="1"/>
+        <line x1="45" y1="350" x2="690" y2="350" stroke="#1e293b" stroke-width="1"/>
+        <line x1="45" y1="280" x2="690" y2="280" stroke="#1e293b" stroke-width="1"/>
+        
+        <!-- Bars -->
+        {bars_svg}
+    </svg>'''
+
+    # SVG ని Direct Chart Image URL గా మార్చడం
+    encoded_svg = urllib.parse.quote(svg_code)
+    return f"https://quickchart.io/chart?req={encoded_svg}"
 
 def scan_mega_account(email, password):
     mega = Mega()
@@ -225,7 +218,7 @@ if __name__ == "__main__":
             if v.get("is_video"):
                 folder_summary[f_name]["videos"] += 1
 
-        img_bytes = generate_html_dashboard_image(
+        chart_url = generate_svg_dashboard_url(
             accounts_chart_data, 
             total_files, 
             total_videos, 
@@ -234,8 +227,7 @@ if __name__ == "__main__":
             folder_summary
         )
 
-        if img_bytes:
-            send_telegram_photo(img_bytes)
+        send_telegram_photo_url(chart_url)
 
         save_state({
             "files": combined_files,
