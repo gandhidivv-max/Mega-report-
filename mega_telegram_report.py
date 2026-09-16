@@ -53,7 +53,7 @@ def send_telegram_message(text):
         return
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    MAX_LEN = 3500  # Safe length per Telegram message
+    MAX_LEN = 3500
 
     if len(text) <= MAX_LEN:
         chunks = [text]
@@ -191,7 +191,7 @@ if __name__ == "__main__":
     variance_str = f"+{net_variance}" if net_variance >= 0 else f"{net_variance}"
 
     report_lines = [
-        "📊 <b>DRIVE MONITOR REPORT</b>\n",
+        "📊 <b>MEGA DATA MONITOR REPORT</b>\n",
         "<pre>",
         "---------------------------------------------",
         "FOLDER NAME           | VD | IM | TL |",
@@ -225,7 +225,6 @@ if __name__ == "__main__":
         "━━━━━━━━━━━━━━━━━━━━━━\n"
     ])
 
-    # Emergency Alert & Complete List of Files in Text
     if deleted_files:
         report_lines.append("🚨 <b>EMERGENCY: MISSING/DELETED FILES FOUND!</b>")
         report_lines.append("➖ <b>DELETED FILES LIST:</b>")
@@ -256,8 +255,6 @@ if __name__ == "__main__":
 
     final_report = "\n".join(report_lines)
 
-    # Send report in text format (Auto Split into parts if too large)
     send_telegram_message(final_report)
 
     save_state({"files": combined_files})
-            
