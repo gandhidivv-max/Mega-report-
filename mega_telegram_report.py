@@ -14,21 +14,26 @@ video_extensions = ('.mp4', '.mkv', '.avi', '.mov', '.flv', '.webm', '.3gp', '.m
 
 def get_all_mega_credentials():
     accounts = []
-    e1 = os.environ.get("MEGA_EMAIL_1") or os.environ.get("MEGA_EMAIL")
-    p1 = os.environ.get("MEGA_PASSWORD_1") or os.environ.get("MEGA_PASSWORD")
+    
+    # Account 1 Credentials
+    e1 = os.environ.get("MEGA_EMAIL_1") or os.environ.get("MEGA_EMAIL") or os.environ.get("EMAIL_1")
+    p1 = os.environ.get("MEGA_PASSWORD_1") or os.environ.get("MEGA_PASSWORD") or os.environ.get("PASS_1")
     if e1 and p1:
-        accounts.append({"email": e1, "pass": p1, "name": "Account 1"})
+        accounts.append({"email": e1.strip(), "pass": p1.strip(), "name": "Account 1"})
 
-    e2 = os.environ.get("MEGA_EMAIL_2")
-    p2 = os.environ.get("MEGA_PASSWORD_2")
+    # Account 2 Credentials
+    e2 = os.environ.get("MEGA_EMAIL_2") or os.environ.get("EMAIL_2")
+    p2 = os.environ.get("MEGA_PASSWORD_2") or os.environ.get("PASS_2")
     if e2 and p2:
-        accounts.append({"email": e2, "pass": p2, "name": "Account 2"})
+        accounts.append({"email": e2.strip(), "pass": p2.strip(), "name": "Account 2"})
 
-    e3 = os.environ.get("MEGA_EMAIL_3")
-    p3 = os.environ.get("MEGA_PASSWORD_3")
+    # Account 3 Credentials
+    e3 = os.environ.get("MEGA_EMAIL_3") or os.environ.get("EMAIL_3")
+    p3 = os.environ.get("MEGA_PASSWORD_3") or os.environ.get("PASS_3")
     if e3 and p3:
-        accounts.append({"email": e3, "pass": p3, "name": "Account 3"})
+        accounts.append({"email": e3.strip(), "pass": p3.strip(), "name": "Account 3"})
 
+    print(f"Total Accounts Detected in Secrets: {len(accounts)}")
     return accounts
 
 def load_state():
@@ -160,19 +165,20 @@ def scan_mega_account(account_info):
     password = account_info["pass"]
     acc_name = account_info["name"]
 
+    print(f"Scanning {acc_name} ({email})...")
     mega = Mega()
     m = None
     for attempt in range(3):
         try:
-            time.sleep(12)
+            time.sleep(5)
             m = mega.login(email, password)
             if m:
                 break
         except Exception as e:
+            print(f"Attempt {attempt+1} failed for {acc_name}: {e}")
             if attempt == 2:
-                print(f"Failed to login {acc_name}: {e}")
                 return {}, 0, 0, {}
-            time.sleep(15)
+            time.sleep(10)
     
     files_data = m.get_files()
     account_files = {}
@@ -214,6 +220,7 @@ def scan_mega_account(account_info):
                     video_count += 1
                     acc_folders[folder_name]["videos"] += 1
 
+    print(f"Done scanning {acc_name}: Found {total_files} files, {video_count} videos, {len(acc_folders)} folders.")
     return account_files, total_files, video_count, acc_folders
 
 if __name__ == "__main__":
@@ -239,7 +246,6 @@ if __name__ == "__main__":
             total_videos += v_count
             accounts_chart_data.append({"name": acc["name"], "videos": v_count})
 
-            # Merge folders correctly without overwriting
             for f_name, stats in acc_folders.items():
                 if f_name not in combined_folders:
                     combined_folders[f_name] = {"files": 0, "videos": 0}
@@ -269,4 +275,4 @@ if __name__ == "__main__":
         "max_video_count": total_videos,
         "total_files": total_files
     })
-                
+    
