@@ -46,24 +46,29 @@ def save_state(state):
 
 def send_telegram_photo_bytes(image_bytes):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Telegram Credentials Missing!")
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     files = {'photo': ('dashboard.png', image_bytes, 'image/png')}
     payload = {'chat_id': TELEGRAM_CHAT_ID}
-    requests.post(url, data=payload, files=files)
+    res = requests.post(url, data=payload, files=files)
+    print("Telegram Response:", res.text)
 
 def generate_pillow_dashboard(accounts_data, total_files, total_videos, recently_added, recently_deleted, folder_summary):
     width, height = 800, 520
     img = Image.new('RGB', (width, height), color='#0f172a')
     draw = ImageDraw.Draw(img)
 
-    font_title = font_main = font_sub = ImageFont.load_default()
+    try:
+        font = ImageFont.load_default()
+    except Exception:
+        font = None
 
     # Header
     draw.rectangle([(0, 0), (width, 55)], fill='#1e293b')
-    draw.text((25, 18), "MEGA CLOUD LIVE DASHBOARD", fill='#00f2fe', font=font_title)
+    draw.text((25, 18), "MEGA CLOUD LIVE DASHBOARD", fill='#00f2fe', font=font)
 
-    # 4 Stat Cards Box Dimensions
+    # 4 Stat Cards
     cards = [
         ("TOTAL FILES", str(total_files), "#00f2fe", 25),
         ("TOTAL VIDEOS", str(total_videos), "#e11d73", 215),
@@ -73,29 +78,28 @@ def generate_pillow_dashboard(accounts_data, total_files, total_videos, recently
 
     for label, val, color, x in cards:
         draw.rectangle([(x, 75), (x + 180, 145)], fill='#1e293b', outline=color, width=2)
-        draw.text((x + 12, 88), label, fill='#94a3b8', font=font_sub)
-        draw.text((x + 12, 110), val, fill=color, font=font_main)
+        draw.text((x + 12, 88), label, fill='#94a3b8', font=font)
+        draw.text((x + 12, 110), val, fill=color, font=font)
 
-    # Folders Section Box
+    # Folders Breakdown Section
     draw.rectangle([(25, 165), (775, 230)], fill='#1e293b')
-    draw.text((40, 175), "FOLDERS BREAKDOWN:", fill='#38bdf8', font=font_sub)
+    draw.text((40, 175), "FOLDERS BREAKDOWN:", fill='#38bdf8', font=font)
     
-    y_folder = 198
     folder_items = list(folder_summary.items())[:3]
     if folder_items:
         f_text = "   |   ".join([f"{f_name}: {stats['videos']} Videos ({stats['files']} Files)" for f_name, stats in folder_items])
-        draw.text((40, y_folder), f_text, fill='#ffffff', font=font_sub)
+        draw.text((40, 198), f_text, fill='#ffffff', font=font)
     else:
-        draw.text((40, y_folder), "No folders found", fill='#ffffff', font=font_sub)
+        draw.text((40, 198), "No folders found", fill='#ffffff', font=font)
 
-    # Bar Graph Container
-    draw.text((25, 250), "VIDEOS PER ACCOUNT", fill='#38bdf8', font=font_sub)
+    # Bar Graph Box
+    draw.text((25, 250), "VIDEOS PER ACCOUNT", fill='#38bdf8', font=font)
     draw.rectangle([(25, 270), (775, 490)], fill='#0b1120')
 
-    # Draw Graph Axes Lines
+    # Draw Axes Line
     draw.line([(45, 450), (755, 450)], fill='#334155', width=1)
 
-    # Draw Bars
+    # Bars
     max_vids = max([acc["videos"] for acc in accounts_data] + [1])
     colors = ["#00f2fe", "#e11d73", "#ff9a00"]
     x_pos = 100
@@ -106,13 +110,14 @@ def generate_pillow_dashboard(accounts_data, total_files, total_videos, recently
         bar_color = colors[i % len(colors)]
 
         draw.rectangle([(x_pos, y_pos), (x_pos + 70, 450)], fill=bar_color)
-        draw.text((x_pos + 25, y_pos - 18), str(acc['videos']), fill='#ffffff', font=font_main)
-        draw.text((x_pos + 10, 460), acc['name'], fill='#94a3b8', font=font_sub)
+        draw.text((x_pos + 25, max(y_pos - 18, 280)), str(acc['videos']), fill='#ffffff', font=font)
+        draw.text((x_pos + 10, 460), acc['name'], fill='#94a3b8', font=font)
         
         x_pos += 230
 
     buffer = BytesIO()
     img.save(buffer, format='PNG')
+    buffer.seek(0)
     return buffer.getvalue()
 
 def scan_mega_account(email, password):
@@ -168,59 +173,58 @@ def scan_mega_account(email, password):
     return account_files, total_files, video_count, deleted_bin_count
 
 if __name__ == "__main__":
-    try:
-        mega_accounts = get_all_mega_credentials()
-        if not mega_accounts:
-            exit()
+    mega_accounts = get_all_mega_credentials()
+    if not mega_accounts:
+        print("No Mega credentials provided!")
+        exit()
 
-        prev_state = load_state()
-        prev_files = prev_state.get("files", {})
+    prev_state = load_state()
+    prev_files = prev_state.get("files", {})
 
-        combined_files = {}
-        total_files = 0
-        total_videos = 0
-        total_deleted_bin = 0
-        accounts_chart_data = []
+    combined_files = {}
+    total_files = 0
+    total_videos = 0
+    total_deleted_bin = 0
+    accounts_chart_data = []
 
-        for acc in mega_accounts:
-            try:
-                files, t_files, v_count, d_bin = scan_mega_account(acc["email"], acc["pass"])
-                combined_files.update(files)
-                total_files += t_files
-                total_videos += v_count
-                total_deleted_bin += d_bin
-                accounts_chart_data.append({"name": acc["name"], "videos": v_count})
-            except Exception:
-                accounts_chart_data.append({"name": acc["name"], "videos": 0})
+    for acc in mega_accounts:
+        try:
+            files, t_files, v_count, d_bin = scan_mega_account(acc["email"], acc["pass"])
+            combined_files.update(files)
+            total_files += t_files
+            total_videos += v_count
+            total_deleted_bin += d_bin
+            accounts_chart_data.append({"name": acc["name"], "videos": v_count})
+        except Exception as e:
+            print(f"Error scanning {acc['name']}: {e}")
+            accounts_chart_data.append({"name": acc["name"], "videos": 0})
 
-        recently_added = sum(1 for k, v in combined_files.items() if k not in prev_files and v.get("is_video"))
-        recently_deleted = sum(1 for k in prev_files if k not in combined_files)
+    recently_added = sum(1 for k, v in combined_files.items() if k not in prev_files and v.get("is_video"))
+    recently_deleted = sum(1 for k in prev_files if k not in combined_files)
 
-        folder_summary = {}
-        for k, v in combined_files.items():
-            f_name = v.get("folder", "Root")
-            if f_name not in folder_summary:
-                folder_summary[f_name] = {"files": 0, "videos": 0}
-            folder_summary[f_name]["files"] += 1
-            if v.get("is_video"):
-                folder_summary[f_name]["videos"] += 1
+    folder_summary = {}
+    for k, v in combined_files.items():
+        f_name = v.get("folder", "Root")
+        if f_name not in folder_summary:
+            folder_summary[f_name] = {"files": 0, "videos": 0}
+        folder_summary[f_name]["files"] += 1
+        if v.get("is_video"):
+            folder_summary[f_name]["videos"] += 1
 
-        img_bytes = generate_pillow_dashboard(
-            accounts_chart_data, 
-            total_files, 
-            total_videos, 
-            recently_added, 
-            recently_deleted + total_deleted_bin,
-            folder_summary
-        )
+    img_bytes = generate_pillow_dashboard(
+        accounts_chart_data, 
+        total_files, 
+        total_videos, 
+        recently_added, 
+        recently_deleted + total_deleted_bin,
+        folder_summary
+    )
 
-        send_telegram_photo_bytes(img_bytes)
+    send_telegram_photo_bytes(img_bytes)
 
-        save_state({
-            "files": combined_files,
-            "max_video_count": total_videos,
-            "total_files": total_files
-        })
-    except Exception:
-        pass
-    
+    save_state({
+        "files": combined_files,
+        "max_video_count": total_videos,
+        "total_files": total_files
+    })
+        
