@@ -78,8 +78,12 @@ def draw_combined_folders(draw, x_start, y_start, width, height, all_folders, ti
 
     folder_items = list(all_folders.items())
     col_width = 160  
-    items_per_col = 50  # నిలువుగా 50 రోస్ పడేలా పెద్ద స్పేస్
+    max_cols = (width - 30) // col_width  # గరిష్టంగా పడే కాలమ్‌ల సంఖ్య
     
+    # ఫోల్డర్‌ల మొత్తం సంఖ్యను బట్టి కాలమ్‌కి ఎన్ని పడాలో డైనమిక్‌గా లెక్కిస్తుంది
+    total_folders = len(folder_items)
+    items_per_col = max(50, (total_folders + max_cols - 1) // max_cols)
+
     for idx, (f_name, stats) in enumerate(folder_items):
         col_index = idx // items_per_col
         row_index = idx % items_per_col
@@ -87,12 +91,13 @@ def draw_combined_folders(draw, x_start, y_start, width, height, all_folders, ti
         curr_x = x_start + 15 + (col_index * col_width)
         curr_y = y_start + 55 + (row_index * 24)
         
-        if curr_x + col_width <= x_start + width:
+        # ఇమేజ్ బాక్స్ దాటిపోకుండా సేఫ్‌గా సరిపోయేలా చెకింగ్
+        if curr_x + col_width <= x_start + width and curr_y + 24 <= y_start + height:
             line = f"• {f_name[:12]} - {stats['videos']}"
             draw.text((curr_x, curr_y), line, fill='#ffffff', font=font_regular)
 
 def generate_pillow_dashboard(accounts_data, total_files, total_videos, added_names, deleted_names, folder_summary_by_acc):
-    width, height = 1080, 2400  # పొడవాటి వర్టికల్ ఇమేజ్ సైజ్ (Tall Mobile Screenshot Layout)
+    width, height = 1080, 2400
     img = Image.new('RGB', (width, height), color='#0b0f19')
     draw = ImageDraw.Draw(img)
 
@@ -105,7 +110,7 @@ def generate_pillow_dashboard(accounts_data, total_files, total_videos, added_na
     draw.rectangle([(0, 0), (width, 80)], fill='#1e293b')
     draw.text((30, 24), "MEGA CLOUD LIVE DASHBOARD", fill='#00f2fe', font=font_title)
 
-    # 4 Stat Cards Grid (2x2 Grid)
+    # 4 Stat Cards Grid
     cards = [
         ("TOTAL FILES", str(total_files), "#00f2fe", 30, 100),
         ("TOTAL VIDEOS", str(total_videos), "#e11d73", 550, 100),
@@ -118,7 +123,7 @@ def generate_pillow_dashboard(accounts_data, total_files, total_videos, added_na
         draw.text((x + 20, y + 15), label, fill='#94a3b8', font=font_sub)
         draw.text((x + 20, y + 48), val, fill=color, font=font_bold)
 
-    # Combine Account 1 & Account 2 Folders together
+    # Combine Account 1 & Account 2 Folders
     combined_folders = {}
     for acc_name, folders in folder_summary_by_acc.items():
         for f_name, stats in folders.items():
@@ -127,11 +132,11 @@ def generate_pillow_dashboard(accounts_data, total_files, total_videos, added_na
             combined_folders[f_name]["files"] += stats["files"]
             combined_folders[f_name]["videos"] += stats["videos"]
 
-    # Large Combined Vertical Box (Height: 1600px)
+    # Dynamic Combined Box
     draw.text((30, 330), "FOLDERS BREAKDOWN (COMBINED)", fill='#38bdf8', font=font_sub)
     draw_combined_folders(draw, 30, 365, 1020, 1600, combined_folders, '#00f2fe', font_sub, font_regular)
 
-    # Recent File Logs Section (Bottom)
+    # Recent File Logs Section
     draw.text((30, 1990), "RECENT FILE LOGS", fill='#38bdf8', font=font_sub)
     
     # Added Box
