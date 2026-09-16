@@ -44,24 +44,46 @@ def save_state(state):
         print(f"Error saving state: {e}")
 
 def send_telegram_message(text):
+    """
+    Splits long messages cleanly without breaking <pre> HTML tags 
+    so table alignment is always preserved.
+    """
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("Telegram Credentials Missing!")
         return
-        
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    MAX_LEN = 3800
-    
-    lines = text.split("\n")
-    chunks = []
-    current_chunk = ""
-    for line in lines:
-        if len(current_chunk) + len(line) + 1 > MAX_LEN:
+    MAX_LEN = 3500  # Safe length per Telegram message
+
+    if len(text) <= MAX_LEN:
+        chunks = [text]
+    else:
+        lines = text.split("\n")
+        chunks = []
+        current_chunk = ""
+        in_pre_block = False
+
+        for line in lines:
+            if "<pre>" in line:
+                in_pre_block = True
+            if "</pre>" in line:
+                in_pre_block = False
+
+            if len(current_chunk) + len(line) + 15 > MAX_LEN:
+                if in_pre_block:
+                    current_chunk += "</pre>"
+                    chunks.append(current_chunk)
+                    current_chunk = "<pre>\n" + line + "\n"
+                else:
+                    chunks.append(current_chunk)
+                    current_chunk = line + "\n"
+            else:
+                current_chunk += line + "\n"
+
+        if current_chunk:
+            if in_pre_block and "</pre>" not in current_chunk:
+                current_chunk += "</pre>"
             chunks.append(current_chunk)
-            current_chunk = line + "\n"
-        else:
-            current_chunk += line + "\n"
-    if current_chunk:
-        chunks.append(current_chunk)
 
     for idx, chunk in enumerate(chunks):
         payload = {
@@ -69,7 +91,7 @@ def send_telegram_message(text):
             'text': chunk,
             'parse_mode': 'HTML'
         }
-        res = requests.post(url, data=payload)
+        requests.post(url, data=payload)
         time.sleep(1)
 
 def scan_mega_account(account_info):
@@ -79,7 +101,7 @@ def scan_mega_account(account_info):
 
     mega = Mega()
     m = None
-    
+
     for attempt in range(1, 4):
         try:
             time.sleep(5)
@@ -90,7 +112,7 @@ def scan_mega_account(account_info):
             if attempt == 3:
                 return {}, {}
             time.sleep(10)
-    
+
     try:
         files_data = m.get_files()
     except Exception as e:
@@ -113,22 +135,22 @@ def scan_mega_account(account_info):
                 file_name = attr.get('n', 'Unknown') if isinstance(attr, dict) else 'Unknown'
                 parent_id = file_info.get('p', '')
                 folder_name = folder_map.get(parent_id, "Root / Main")
-                
+
                 name_lower = str(file_name).lower()
                 is_vid = name_lower.endswith(video_extensions)
                 is_img = name_lower.endswith(image_extensions)
-                
+
                 unique_key = f"{email}_{file_id}"
-                
+
                 account_files[unique_key] = {
                     "name": file_name,
                     "folder": folder_name,
                     "account": acc_name
                 }
-                
+
                 if folder_name not in acc_folders:
                     acc_folders[folder_name] = {"videos": 0, "images": 0, "total": 0}
-                
+
                 acc_folders[folder_name]["total"] += 1
                 if is_vid:
                     acc_folders[folder_name]["videos"] += 1
@@ -168,7 +190,6 @@ if __name__ == "__main__":
     net_variance = len(added_files) - len(deleted_files)
     variance_str = f"+{net_variance}" if net_variance >= 0 else f"{net_variance}"
 
-    # Build Response Text
     report_lines = [
         "📊 <b>DRIVE MONITOR REPORT</b>\n",
         "<pre>",
@@ -204,22 +225,18 @@ if __name__ == "__main__":
         "━━━━━━━━━━━━━━━━━━━━━━\n"
     ])
 
-    # Emergency Alert & File Names Section
+    # Emergency Alert & Complete List of Files in Text
     if deleted_files:
         report_lines.append("🚨 <b>EMERGENCY: MISSING/DELETED FILES FOUND!</b>")
         report_lines.append("➖ <b>DELETED FILES LIST:</b>")
-        for d_name in deleted_files[:20]:
+        for d_name in deleted_files:
             report_lines.append(f"• <code>{d_name}</code>")
-        if len(deleted_files) > 20:
-            report_lines.append(f"<i>...and {len(deleted_files) - 20} more deleted.</i>")
         report_lines.append("")
-    
+
     if added_files:
         report_lines.append("➕ <b>NEWLY ADDED FILES LIST:</b>")
-        for a_name in added_files[:20]:
+        for a_name in added_files:
             report_lines.append(f"• <code>{a_name}</code>")
-        if len(added_files) > 20:
-            report_lines.append(f"<i>...and {len(added_files) - 20} more added.</i>")
         report_lines.append("")
 
     if not deleted_files and not added_files:
@@ -239,7 +256,8 @@ if __name__ == "__main__":
 
     final_report = "\n".join(report_lines)
 
+    # Send report in text format (Auto Split into parts if too large)
     send_telegram_message(final_report)
 
     save_state({"files": combined_files})
-    
+            
