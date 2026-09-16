@@ -27,7 +27,6 @@ def get_all_mega_credentials():
                     "name": f"Account {acc_num}"
                 })
     
-    # Sort accounts by name (Account 1, Account 2...)
     accounts = sorted(accounts, key=lambda x: x["name"])
     print(f"Total Accounts Detected: {len(accounts)}")
     return accounts
@@ -159,21 +158,48 @@ if __name__ == "__main__":
     added_names = [v["name"] for k, v in combined_files.items() if k not in prev_files]
     deleted_names = [v["name"] for k, v in prev_files.items() if k not in combined_files]
 
-    # Text Report Building
+    # Header
     report_lines = [
         "🌌 <b>MEGA CLOUD FULL REPORT</b>\n",
-        f"📁 <b>Total Files:</b> {total_files}",
-        f"🎬 <b>Total Videos:</b> {total_videos}",
-        f"➕ <b>Recently Added:</b> +{len(added_names)}",
-        f"🗑️ <b>Recently Deleted / Trash:</b> {len(deleted_names)}\n",
-        "📂 <b>FOLDERS BREAKDOWN:</b>"
+        f"📁 Total Files: {total_files}",
+        f"🎬 Total Videos: {total_videos}",
+        f"➕ Recently Added: +{len(added_names)}",
+        f"🗑️ Recently Deleted / Trash: {len(deleted_names)}\n"
     ]
 
-    # Root First, then Sorted Folders
-    sorted_folders = sorted(combined_folders.keys(), key=lambda x: (x != "Root / Main", x))
+    # Recently Added File Names
+    if added_names:
+        report_lines.append("➕ <b>ADDED FILES:</b>")
+        for name in added_names[:10]:  # Maximum top 10 files
+            report_lines.append(f"• {name}")
+        report_lines.append("")
+
+    # Recently Deleted File Names
+    if deleted_names:
+        report_lines.append("🗑️ <b>DELETED FILES:</b>")
+        for name in deleted_names[:10]:  # Maximum top 10 files
+            report_lines.append(f"• {name}")
+        report_lines.append("")
+
+    # Folders Breakdown Section
+    report_lines.append("📂 <b>FOLDERS BREAKDOWN:</b>")
+
+    # Ascending Order Sorting (Root/Main first, then F1, F2, F3...)
+    def sort_key(name):
+        if name == "Root / Main":
+            return (0, name)
+        # Try numeric sorting if folder format is like F1, F2, F10
+        import re
+        numbers = re.findall(r'\d+', name)
+        if numbers:
+            return (1, int(numbers[0]))
+        return (2, name)
+
+    sorted_folders = sorted(combined_folders.keys(), key=sort_key)
+
     for f_name in sorted_folders:
         stats = combined_folders[f_name]
-        report_lines.append(f"• {f_name}: {stats['videos']} Videos ({stats['files']} Total Files)")
+        report_lines.append(f"• {f_name}: {stats['videos']}")
 
     final_report = "\n".join(report_lines)
 
