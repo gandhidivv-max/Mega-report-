@@ -54,97 +54,116 @@ def send_telegram_photo_bytes(image_bytes):
     res = requests.post(url, data=payload, files=files)
     print("Telegram Response:", res.text)
 
+def get_hd_font(size):
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf"
+    ]
+    for path in font_paths:
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except Exception:
+                pass
+    return ImageFont.load_default()
+
 def generate_pillow_dashboard(accounts_data, total_files, total_videos, added_names, deleted_names, folder_summary):
-    # dynamic height for detailed report
-    width, height = 900, 750
-    img = Image.new('RGB', (width, height), color='#0f172a')
+    # Ultra-HD Canvas Dimensions (1600x1400)
+    width, height = 1600, 1400
+    img = Image.new('RGB', (width, height), color='#0b0f19')
     draw = ImageDraw.Draw(img)
 
-    try:
-        font = ImageFont.load_default()
-    except Exception:
-        font = None
+    font_title = get_hd_font(34)
+    font_sub = get_hd_font(24)
+    font_bold = get_hd_font(28)
+    font_regular = get_hd_font(22)
 
-    # Header
-    draw.rectangle([(0, 0), (width, 55)], fill='#1e293b')
-    draw.text((25, 18), "MEGA CLOUD DETAILED DASHBOARD", fill='#00f2fe', font=font)
+    # Top Header
+    draw.rectangle([(0, 0), (width, 100)], fill='#1e293b')
+    draw.text((40, 32), "MEGA CLOUD LIVE DASHBOARD (FULL REPORT)", fill='#00f2fe', font=font_title)
 
-    # Stat Header Cards
+    # 4 Stat Cards
     cards = [
-        ("TOTAL FILES", str(total_files), "#00f2fe", 25),
-        ("TOTAL VIDEOS", str(total_videos), "#e11d73", 240),
-        ("ADDED FILES", str(len(added_names)), "#22c55e", 455),
-        ("DELETED FILES", str(len(deleted_names)), "#ef4444", 670),
+        ("TOTAL FILES", str(total_files), "#00f2fe", 40),
+        ("TOTAL VIDEOS", str(total_videos), "#e11d73", 420),
+        ("ADDED FILES", str(len(added_names)), "#22c55e", 800),
+        ("DELETED FILES", str(len(deleted_names)), "#ef4444", 1180),
     ]
 
     for label, val, color, x in cards:
-        draw.rectangle([(x, 75), (x + 200, 140)], fill='#1e293b', outline=color, width=2)
-        draw.text((x + 12, 88), label, fill='#94a3b8', font=font)
-        draw.text((x + 12, 110), val, fill=color, font=font)
+        draw.rectangle([(x, 140), (x + 360, 260)], fill='#1e293b', outline=color, width=3)
+        draw.text((x + 24, 160), label, fill='#94a3b8', font=font_sub)
+        draw.text((x + 24, 200), val, fill=color, font=font_bold)
 
-    # Folders Breakdown Section (Displays up to 10 folders)
-    draw.text((25, 160), "ALL FOLDERS BREAKDOWN", fill='#38bdf8', font=font)
-    draw.rectangle([(25, 180), (875, 330)], fill='#1e293b')
-    
-    y_folder = 192
+    # Folders Breakdown Section (Account-wise Granular Split)
+    draw.text((40, 300), "ALL FOLDERS BREAKDOWN (BY ACCOUNT)", fill='#38bdf8', font=font_sub)
+    draw.rectangle([(40, 340), (1560, 680)], fill='#151d30')
+
+    y_folder = 360
     if folder_summary:
-        for f_name, stats in list(folder_summary.items())[:8]:
-            line = f"• {f_name[:30]}: {stats['videos']} Videos ({stats['files']} Total Files)"
-            draw.text((40, y_folder), line, fill='#ffffff', font=font)
-            y_folder += 16
+        for f_name, stats in list(folder_summary.items())[:11]:
+            line = f"> {f_name[:55]}: {stats['videos']} Videos ({stats['files']} Files)"
+            draw.text((70, y_folder), line, fill='#ffffff', font=font_regular)
+            y_folder += 28
     else:
-        draw.text((40, 192), "No folders found", fill='#ffffff', font=font)
+        draw.text((70, 360), "No folders found", fill='#ffffff', font=font_regular)
 
-    # File Logs: Added & Deleted Names
-    draw.text((25, 350), "RECENT FILE UPDATES", fill='#38bdf8', font=font)
-    draw.rectangle([(25, 370), (435, 520)], fill='#1e293b', outline='#22c55e', width=1)
-    draw.text((35, 378), "RECENTLY ADDED FILES:", fill='#22c55e', font=font)
+    # File Updates: Added & Deleted Names Log
+    draw.text((40, 720), "RECENT FILE LOGS", fill='#38bdf8', font=font_sub)
     
-    y_add = 400
+    # Added Box
+    draw.rectangle([(40, 760), (780, 1000)], fill='#151d30', outline='#22c55e', width=2)
+    draw.text((60, 780), "RECENTLY ADDED FILES", fill='#22c55e', font=font_sub)
+    y_add = 820
     if added_names:
-        for name in added_names[:5]:
-            draw.text((35, y_add), f"+ {name[:40]}", fill='#ffffff', font=font)
-            y_add += 20
+        for name in added_names[:6]:
+            draw.text((60, y_add), f"+ {name[:45]}", fill='#ffffff', font=font_regular)
+            y_add += 28
     else:
-        draw.text((35, 400), "No new files added recently", fill='#94a3b8', font=font)
+        draw.text((60, 820), "No new files added recently", fill='#94a3b8', font=font_regular)
 
-    draw.rectangle([(465, 370), (875, 520)], fill='#1e293b', outline='#ef4444', width=1)
-    draw.text((475, 378), "RECENTLY DELETED FILES:", fill='#ef4444', font=font)
-    
-    y_del = 400
+    # Deleted Box
+    draw.rectangle([(820, 760), (1560, 1000)], fill='#151d30', outline='#ef4444', width=2)
+    draw.text((840, 780), "RECENTLY DELETED FILES", fill='#ef4444', font=font_sub)
+    y_del = 820
     if deleted_names:
-        for name in deleted_names[:5]:
-            draw.text((475, y_del), f"- {name[:40]}", fill='#ffffff', font=font)
-            y_del += 20
+        for name in deleted_names[:6]:
+            draw.text((840, y_del), f"- {name[:45]}", fill='#ffffff', font=font_regular)
+            y_del += 28
     else:
-        draw.text((475, 400), "No files deleted recently", fill='#94a3b8', font=font)
+        draw.text((840, 820), "No files deleted recently", fill='#94a3b8', font=font_regular)
 
     # Bar Graph Box (Videos per account)
-    draw.text((25, 540), "VIDEOS PER ACCOUNT", fill='#38bdf8', font=font)
-    draw.rectangle([(25, 560), (875, 720)], fill='#0b1120')
-    draw.line([(45, 680), (855, 680)], fill='#334155', width=1)
+    draw.text((40, 1040), "VIDEOS PER ACCOUNT", fill='#38bdf8', font=font_sub)
+    draw.rectangle([(40, 1080), (1560, 1340)], fill='#0b1120')
+    draw.line([(80, 1280), (1520, 1280)], fill='#334155', width=2)
 
     max_vids = max([acc["videos"] for acc in accounts_data] + [1])
     colors = ["#00f2fe", "#e11d73", "#ff9a00"]
-    x_pos = 120
+    x_pos = 200
 
     for i, acc in enumerate(accounts_data):
-        bar_h = int((acc["videos"] / max_vids) * 90)
-        y_pos = 680 - bar_h
+        bar_h = int((acc["videos"] / max_vids) * 150)
+        y_pos = 1280 - bar_h
         bar_color = colors[i % len(colors)]
 
-        draw.rectangle([(x_pos, y_pos), (x_pos + 80, 680)], fill=bar_color)
-        draw.text((x_pos + 30, max(y_pos - 18, 570)), str(acc['videos']), fill='#ffffff', font=font)
-        draw.text((x_pos + 15, 690), acc['name'], fill='#94a3b8', font=font)
+        draw.rectangle([(x_pos, y_pos), (x_pos + 140, 1280)], fill=bar_color)
+        draw.text((x_pos + 45, max(y_pos - 35, 1100)), str(acc['videos']), fill='#ffffff', font=font_bold)
+        draw.text((x_pos + 30, 1290), acc['name'], fill='#94a3b8', font=font_sub)
         
-        x_pos += 250
+        x_pos += 450
 
     buffer = BytesIO()
-    img.save(buffer, format='PNG')
+    img.save(buffer, format='PNG', quality=100)
     buffer.seek(0)
     return buffer.getvalue()
 
-def scan_mega_account(email, password):
+def scan_mega_account(account_info):
+    email = account_info["email"]
+    password = account_info["pass"]
+    acc_name = account_info["name"]
+
     mega = Mega()
     m = None
     for attempt in range(3):
@@ -180,10 +199,13 @@ def scan_mega_account(email, password):
                 folder_name = folder_map.get(parent_id, "Root")
                 is_vid = str(file_name).lower().endswith(video_extensions)
                 
+                # Dynamic account tag prefix for multi-account folders
+                full_folder_tag = f"[{acc_name}] {folder_name}"
                 unique_key = f"{email}_{file_id}"
+                
                 account_files[unique_key] = {
                     "name": file_name,
-                    "folder": folder_name,
+                    "folder": full_folder_tag,
                     "is_video": is_vid
                 }
                 if is_vid:
@@ -207,7 +229,7 @@ if __name__ == "__main__":
 
     for acc in mega_accounts:
         try:
-            files, t_files, v_count = scan_mega_account(acc["email"], acc["pass"])
+            files, t_files, v_count = scan_mega_account(acc)
             combined_files.update(files)
             total_files += t_files
             total_videos += v_count
@@ -216,11 +238,9 @@ if __name__ == "__main__":
             print(f"Error scanning {acc['name']}: {e}")
             accounts_chart_data.append({"name": acc["name"], "videos": 0})
 
-    # Get Exact File Names for Added and Deleted
     added_names = [v["name"] for k, v in combined_files.items() if k not in prev_files]
     deleted_names = [v["name"] for k, v in prev_files.items() if k not in combined_files]
 
-    # Folders Summary across all accounts
     folder_summary = {}
     for k, v in combined_files.items():
         f_name = v.get("folder", "Root")
@@ -246,4 +266,4 @@ if __name__ == "__main__":
         "max_video_count": total_videos,
         "total_files": total_files
     })
-    
+            
