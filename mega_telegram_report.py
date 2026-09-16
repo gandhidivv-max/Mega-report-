@@ -2,8 +2,7 @@ import os
 import json
 import time
 import requests
-import matplotlib.pyplot as plt
-from PIL import Image, ImageDraw, ImageFont
+import urllib.parse
 from mega import Mega
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -28,6 +27,7 @@ def get_all_mega_credentials():
     p3 = os.environ.get("MEGA_PASSWORD_3")
     if e3 and p3:
         accounts.append({"email": e3, "pass": p3, "name": "Account 3"})
+
     return accounts
 
 def load_state():
@@ -43,89 +43,86 @@ def save_state(state):
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=4)
 
-def send_telegram_photo(image_path):
+def send_telegram_photo_only(photo_url):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-    with open(image_path, 'rb') as photo:
-        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID}, files={"photo": photo})
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "photo": photo_url
+    }
+    requests.post(url, json=payload)
 
-def generate_custom_dashboard_image(accounts_data, total_files, total_videos, recently_added, recently_deleted, folder_summary):
-    # 1. Matplotlib తో Graph తయారు చేసి సేవ్ చేయడం
-    names = [acc["name"] for acc in accounts_data]
-    counts = [acc["videos"] for acc in accounts_data]
-    
-    fig, ax = plt.subplots(figsize=(6, 3), dpi=150)
-    fig.patch.set_facecolor('#0f172a')
-    ax.set_facecolor('#0f172a')
-    
-    bars = ax.bar(names, counts, color=['#00f2fe', '#e11d73', '#ff9a00'][:len(names)], width=0.4)
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['left'].set_color('#a0aec0')
-    ax.spines['bottom'].set_color('#a0aec0')
-    ax.tick_params(colors='white', labelsize=8)
-    
-    for bar in bars:
-        yval = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2.0, yval + 2, f'{yval}', ha='center', va='bottom', color='white', fontweight='bold', fontsize=9)
-        
-    plt.tight_layout()
-    chart_path = "temp_chart.png"
-    plt.savefig(chart_path, facecolor=fig.get_facecolor(), edgecolor='none')
-    plt.close()
+def generate_quickchart_dashboard(accounts_data, total_files, total_videos, recently_added, recently_deleted, folder_summary):
+    labels = [acc["name"] for acc in accounts_data]
+    video_counts = [acc["videos"] for acc in accounts_data]
 
-    # 2. Pillow తో HD Dashboard Banner తయారు చేయడం
-    width, height = 900, 650
-    img = Image.new('RGB', (width, height), color='#0f172a')
-    draw = ImageDraw.Draw(img)
-    
-    try:
-        font_title = ImageFont.truetype("arial.ttf", 26)
-        font_main = ImageFont.truetype("arial.ttf", 16)
-        font_sub = ImageFont.truetype("arial.ttf", 14)
-    except Exception:
-        font_title = font_main = font_sub = ImageFont.load_default()
-
-    # Title Banner
-    draw.rectangle([(0, 0), (width, 60)], fill='#1e293b')
-    draw.text((20, 15), "MEGA CLOUD LIVE DASHBOARD", fill='#ffffff', font=font_title)
-
-    # Key Stats Boxes
-    draw.rectangle([(20, 80), (220, 150)], fill='#1e293b', outline='#00f2fe', width=2)
-    draw.text((30, 90), "Total Files", fill='#a0aec0', font=font_sub)
-    draw.text((30, 115), str(total_files), fill='#ffffff', font=font_main)
-
-    draw.rectangle([(240, 80), (440, 150)], fill='#1e293b', outline='#e11d73', width=2)
-    draw.text((250, 90), "Total Videos", fill='#a0aec0', font=font_sub)
-    draw.text((250, 115), str(total_videos), fill='#ffffff', font=font_main)
-
-    draw.rectangle([(460, 80), (660, 150)], fill='#1e293b', outline='#22c55e', width=2)
-    draw.text((470, 90), "Recently Added", fill='#a0aec0', font=font_sub)
-    draw.text((470, 115), f"+{recently_added}", fill='#22c55e', font=font_main)
-
-    draw.rectangle([(680, 80), (880, 150)], fill='#1e293b', outline='#ef4444', width=2)
-    draw.text((690, 90), "Recently Deleted", fill='#a0aec0', font=font_sub)
-    draw.text((690, 115), str(recently_deleted), fill='#ef4444', font=font_main)
-
-    # Folders Breakdown Text Section
-    draw.rectangle([(20, 170), (880, 310)], fill='#1e293b')
-    draw.text((35, 180), "FOLDERS BREAKDOWN:", fill='#38bdf8', font=font_main)
-    
-    y_off = 210
+    # ఫోల్డర్ల లిస్ట్‌ని సబ్‌టైటిల్ లైన్లుగా ఫార్మాట్ చేయడం
+    folder_lines = []
     for f_name, stats in folder_summary.items():
-        if y_off < 290:
-            txt = f"• {f_name}: {stats['videos']} Videos  ({stats['files']} Total Files)"
-            draw.text((35, y_off), txt, fill='#ffffff', font=font_sub)
-            y_off += 25
+        folder_lines.append(f"• {f_name}: {stats['videos']} Vids ({stats['files']} Files)")
+    
+    folder_text = "   |   ".join(folder_lines[:3]) # టాప్ 3 ఫోల్డర్లు ఒకే లైన్లో
 
-    # Graph ని Dashboard కి జత చేయడం
-    chart_img = Image.open(chart_path)
-    img.paste(chart_img, (20, 320))
+    chart_config = {
+        "type": "bar",
+        "data": {
+            "labels": labels,
+            "datasets": [{
+                "label": "Videos",
+                "data": video_counts,
+                "backgroundColor": ["#00f2fe", "#e11d73", "#ff9a00"],
+                "borderRadius": 6,
+                "datalabels": {
+                    "align": "end",
+                    "anchor": "end",
+                    "color": "#ffffff",
+                    "font": {"size": 18, "weight": "bold"}
+                }
+            }]
+        },
+        "options": {
+            "layout": {
+                "padding": {"top": 30, "left": 20, "right": 20, "bottom": 10}
+            },
+            "plugins": {
+                "title": {
+                    "display": True,
+                    "text": "⚡ MEGA CLOUD LIVE DASHBOARD",
+                    "color": "#ffffff",
+                    "font": {"size": 22, "weight": "bold"}
+                },
+                "subtitle": {
+                    "display": True,
+                    "text": [
+                        f"📁 Total Files: {total_files}   |   🎬 Total Videos: {total_videos}",
+                        f"➕ Added: +{recently_added}   |   🗑️ Deleted: {recently_deleted}",
+                        "───────────────────────────────────────────",
+                        f"📂 FOLDERS: {folder_text}"
+                    ],
+                    "color": "#38bdf8",
+                    "font": {"size": 13, "weight": "bold"},
+                    "padding": {"bottom": 25}
+                },
+                "legend": {"display": False},
+                "datalabels": {"display": True}
+            },
+            "scales": {
+                "x": {
+                    "ticks": {"color": "#ffffff", "font": {"size": 14, "weight": "bold"}},
+                    "grid": {"display": False}
+                },
+                "y": {
+                    "ticks": {"color": "#94a3b8", "font": {"size": 12}},
+                    "grid": {"color": "rgba(255, 255, 255, 0.1)"},
+                    "grace": "20%"
+                }
+            }
+        }
+    }
 
-    final_path = "final_dashboard.png"
-    img.save(final_path)
-    return final_path
+    encoded_chart = urllib.parse.quote(json.dumps(chart_config))
+    return f"https://quickchart.io/chart?c={encoded_chart}&bkg=%230f172a&w=850&h=520&devicePixelRatio=2"
 
 def scan_mega_account(email, password):
     mega = Mega()
@@ -134,22 +131,27 @@ def scan_mega_account(email, password):
         try:
             time.sleep(12)
             m = mega.login(email, password)
-            if m: break
+            if m:
+                break
         except Exception as e:
-            if attempt == 2: raise e
+            if attempt == 2:
+                raise e
             time.sleep(15)
     
     trash_id = getattr(m, 'trash_id', None) or getattr(m, 'trash_folder', None)
     files_data = m.get_files()
-    account_files, folder_map = {}, {}
-    video_count, total_files, deleted_bin_count = 0, 0, 0
+    account_files = {}
+    folder_map = {}
+    video_count = 0
+    total_files = 0
+    deleted_bin_count = 0
 
     if isinstance(files_data, dict):
         for node_id, node_info in files_data.items():
             if isinstance(node_info, dict) and node_info.get('t') == 1:
                 attr = node_info.get('a', {})
                 if isinstance(attr, dict):
-                    folder_map[node_id] = attr.get('n', 'Main Root')
+                    folder_map[node_id] = attr.get('n', 'Root')
 
         for file_id, file_info in files_data.items():
             if isinstance(file_info, dict) and file_info.get('t') == 0:
@@ -161,26 +163,32 @@ def scan_mega_account(email, password):
                     deleted_bin_count += 1
                 else:
                     total_files += 1
-                    folder_name = folder_map.get(parent_id, "Main Root")
+                    folder_name = folder_map.get(parent_id, "Root")
                     is_vid = str(file_name).lower().endswith(video_extensions)
                     unique_key = f"{email}_{file_id}"
                     account_files[unique_key] = {
-                        "name": file_name, "folder": folder_name, "is_video": is_vid
+                        "name": file_name,
+                        "folder": folder_name,
+                        "is_video": is_vid
                     }
-                    if is_vid: video_count += 1
+                    if is_vid:
+                        video_count += 1
 
     return account_files, total_files, video_count, deleted_bin_count
 
 if __name__ == "__main__":
     try:
         mega_accounts = get_all_mega_credentials()
-        if not mega_accounts: exit()
+        if not mega_accounts:
+            exit()
 
         prev_state = load_state()
         prev_files = prev_state.get("files", {})
 
         combined_files = {}
-        total_files, total_videos, total_deleted_bin = 0, 0, 0
+        total_files = 0
+        total_videos = 0
+        total_deleted_bin = 0
         accounts_chart_data = []
 
         for acc in mega_accounts:
@@ -199,15 +207,15 @@ if __name__ == "__main__":
 
         folder_summary = {}
         for k, v in combined_files.items():
-            f_name = v.get("folder", "Main Root")
+            f_name = v.get("folder", "Root")
             if f_name not in folder_summary:
                 folder_summary[f_name] = {"files": 0, "videos": 0}
             folder_summary[f_name]["files"] += 1
             if v.get("is_video"):
                 folder_summary[f_name]["videos"] += 1
 
-        # PIL ద్వారా ఇమేజ్ జనరేట్ చేయడం
-        final_image = generate_custom_dashboard_image(
+        # Dashboard URL తయారు చేయటం
+        chart_url = generate_quickchart_dashboard(
             accounts_chart_data, 
             total_files, 
             total_videos, 
@@ -216,7 +224,7 @@ if __name__ == "__main__":
             folder_summary
         )
 
-        send_telegram_photo(final_image)
+        send_telegram_photo_only(chart_url)
 
         save_state({
             "files": combined_files,
@@ -225,4 +233,4 @@ if __name__ == "__main__":
         })
     except Exception:
         pass
-                  
+                        
