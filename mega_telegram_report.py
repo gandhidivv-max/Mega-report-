@@ -68,91 +68,93 @@ def get_hd_font(size):
                 pass
     return ImageFont.load_default()
 
-def draw_account_folders(draw, x_start, y_start, width, height, acc_title, folders, title_color, font_sub, font_regular):
+def draw_combined_folders(draw, x_start, y_start, width, height, all_folders, title_color, font_sub, font_regular):
     draw.rectangle([(x_start, y_start), (x_start + width, y_start + height)], fill='#151d30', outline=title_color, width=1)
-    draw.text((x_start + 20, y_start + 15), acc_title, fill=title_color, font=font_sub)
+    draw.text((x_start + 15, y_start + 12), "ALL ACCOUNT FOLDERS SUMMARY", fill=title_color, font=font_sub)
     
-    if not folders:
-        draw.text((x_start + 20, y_start + 60), "No folders found", fill='#94a3b8', font=font_regular)
+    if not all_folders:
+        draw.text((x_start + 15, y_start + 45), "No folders found", fill='#94a3b8', font=font_regular)
         return
 
-    folder_items = list(folders.items())
-    col_width = 230
-    items_per_col = 10
+    folder_items = list(all_folders.items())
+    col_width = 160  # Tight spacing per column
+    items_per_col = 30  # High number of rows in vertical box
     
     for idx, (f_name, stats) in enumerate(folder_items):
         col_index = idx // items_per_col
         row_index = idx % items_per_col
         
-        curr_x = x_start + 20 + (col_index * col_width)
-        curr_y = y_start + 65 + (row_index * 28)
+        curr_x = x_start + 15 + (col_index * col_width)
+        curr_y = y_start + 48 + (row_index * 22)
         
         if curr_x + col_width <= x_start + width:
-            line = f"• {f_name[:15]} - {stats['videos']}"
+            line = f"• {f_name[:12]} - {stats['videos']}"
             draw.text((curr_x, curr_y), line, fill='#ffffff', font=font_regular)
 
 def generate_pillow_dashboard(accounts_data, total_files, total_videos, added_names, deleted_names, folder_summary_by_acc):
-    width, height = 1600, 1150
+    width, height = 1080, 1550  # Vertical Phone Friendly
     img = Image.new('RGB', (width, height), color='#0b0f19')
     draw = ImageDraw.Draw(img)
 
-    font_title = get_hd_font(34)
-    font_sub = get_hd_font(24)
-    font_bold = get_hd_font(28)
-    font_regular = get_hd_font(20)
+    font_title = get_hd_font(28)
+    font_sub = get_hd_font(20)
+    font_bold = get_hd_font(22)
+    font_regular = get_hd_font(16)
 
     # Header
-    draw.rectangle([(0, 0), (width, 100)], fill='#1e293b')
-    draw.text((40, 32), "MEGA CLOUD LIVE DASHBOARD", fill='#00f2fe', font=font_title)
+    draw.rectangle([(0, 0), (width, 80)], fill='#1e293b')
+    draw.text((30, 24), "MEGA CLOUD LIVE DASHBOARD", fill='#00f2fe', font=font_title)
 
-    # 4 Stat Cards
+    # 4 Stat Cards Grid (2x2 Grid)
     cards = [
-        ("TOTAL FILES", str(total_files), "#00f2fe", 40),
-        ("TOTAL VIDEOS", str(total_videos), "#e11d73", 420),
-        ("ADDED FILES", str(len(added_names)), "#22c55e", 800),
-        ("DELETED FILES", str(len(deleted_names)), "#ef4444", 1180),
+        ("TOTAL FILES", str(total_files), "#00f2fe", 30, 100),
+        ("TOTAL VIDEOS", str(total_videos), "#e11d73", 550, 100),
+        ("ADDED FILES", str(len(added_names)), "#22c55e", 30, 210),
+        ("DELETED FILES", str(len(deleted_names)), "#ef4444", 550, 210),
     ]
 
-    for label, val, color, x in cards:
-        draw.rectangle([(x, 140), (x + 360, 260)], fill='#1e293b', outline=color, width=3)
-        draw.text((x + 24, 160), label, fill='#94a3b8', font=font_sub)
-        draw.text((x + 24, 200), val, fill=color, font=font_bold)
+    for label, val, color, x, y in cards:
+        draw.rectangle([(x, y), (x + 500, y + 95)], fill='#1e293b', outline=color, width=2)
+        draw.text((x + 20, y + 15), label, fill='#94a3b8', font=font_sub)
+        draw.text((x + 20, y + 48), val, fill=color, font=font_bold)
 
-    # Multi-Column Folders Breakdown
-    draw.text((40, 300), "FOLDERS BREAKDOWN", fill='#38bdf8', font=font_sub)
+    # Combine Account 1 & Account 2 Folders together
+    combined_folders = {}
+    for acc_name, folders in folder_summary_by_acc.items():
+        for f_name, stats in folders.items():
+            if f_name not in combined_folders:
+                combined_folders[f_name] = {"files": 0, "videos": 0}
+            combined_folders[f_name]["files"] += stats["files"]
+            combined_folders[f_name]["videos"] += stats["videos"]
 
-    # Account 1 Folders Box
-    acc1_folders = folder_summary_by_acc.get("Account 1", {})
-    draw_account_folders(draw, 40, 340, 740, 410, "ACCOUNT 1 FOLDERS", acc1_folders, '#00f2fe', font_sub, font_regular)
+    # Single Combined Vertical Box
+    draw.text((30, 330), "FOLDERS BREAKDOWN (COMBINED)", fill='#38bdf8', font=font_sub)
+    draw_combined_folders(draw, 30, 365, 1020, 840, combined_folders, '#00f2fe', font_sub, font_regular)
 
-    # Account 2 Folders Box
-    acc2_folders = folder_summary_by_acc.get("Account 2", {})
-    draw_account_folders(draw, 820, 340, 740, 410, "ACCOUNT 2 FOLDERS", acc2_folders, '#e11d73', font_sub, font_regular)
-
-    # File Logs Section
-    draw.text((40, 780), "RECENT FILE LOGS", fill='#38bdf8', font=font_sub)
+    # Recent File Logs Section
+    draw.text((30, 1230), "RECENT FILE LOGS", fill='#38bdf8', font=font_sub)
     
     # Added Box
-    draw.rectangle([(40, 820), (780, 1080)], fill='#151d30', outline='#22c55e', width=2)
-    draw.text((60, 840), "RECENTLY ADDED FILES", fill='#22c55e', font=font_sub)
-    y_add = 880
+    draw.rectangle([(30, 1265), (520, 1500)], fill='#151d30', outline='#22c55e', width=2)
+    draw.text((45, 1280), "ADDED FILES", fill='#22c55e', font=font_sub)
+    y_add = 1315
     if added_names:
-        for name in added_names[:6]:
-            draw.text((60, y_add), f"+ {name[:45]}", fill='#ffffff', font=font_regular)
-            y_add += 28
+        for name in added_names[:7]:
+            draw.text((45, y_add), f"+ {name[:32]}", fill='#ffffff', font=font_regular)
+            y_add += 24
     else:
-        draw.text((60, 880), "No new files added recently", fill='#94a3b8', font=font_regular)
+        draw.text((45, 1315), "No new files added", fill='#94a3b8', font=font_regular)
 
     # Deleted Box
-    draw.rectangle([(820, 820), (1560, 1080)], fill='#151d30', outline='#ef4444', width=2)
-    draw.text((840, 840), "RECENTLY DELETED FILES", fill='#ef4444', font=font_sub)
-    y_del = 880
+    draw.rectangle([(550, 1265), (1050, 1500)], fill='#151d30', outline='#ef4444', width=2)
+    draw.text((565, 1280), "DELETED FILES", fill='#ef4444', font=font_sub)
+    y_del = 1315
     if deleted_names:
-        for name in deleted_names[:6]:
-            draw.text((840, y_del), f"- {name[:45]}", fill='#ffffff', font=font_regular)
-            y_del += 28
+        for name in deleted_names[:7]:
+            draw.text((565, y_del), f"- {name[:32]}", fill='#ffffff', font=font_regular)
+            y_del += 24
     else:
-        draw.text((840, 880), "No files deleted recently", fill='#94a3b8', font=font_regular)
+        draw.text((565, 1315), "No files deleted", fill='#94a3b8', font=font_regular)
 
     buffer = BytesIO()
     img.save(buffer, format='PNG', quality=100)
@@ -265,4 +267,4 @@ if __name__ == "__main__":
         "max_video_count": total_videos,
         "total_files": total_files
     })
-              
+    
