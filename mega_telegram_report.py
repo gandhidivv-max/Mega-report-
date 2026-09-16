@@ -13,7 +13,6 @@ video_extensions = ('.mp4', '.mkv', '.avi', '.mov', '.flv', '.webm', '.3gp', '.m
 
 def get_all_mega_credentials():
     accounts = []
-    # Fetching credentials explicitly & dynamically
     for key, value in os.environ.items():
         if key.startswith("MEGA_EMAIL") or key.startswith("EMAIL_"):
             suffix = key.replace("MEGA_EMAIL", "").replace("EMAIL_", "").replace("_", "")
@@ -36,19 +35,15 @@ def load_state():
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, "r") as f:
-                data = json.load(f)
-                print(f"Loaded existing state with {len(data.get('files', {}))} files.")
-                return data
-        except Exception as e:
-            print(f"Error loading state file: {e}")
-    print("No previous state found. Initializing new state.")
+                return json.load(f)
+        except Exception:
+            pass
     return {"files": {}, "max_video_count": 0, "total_files": 0}
 
 def save_state(state):
     try:
         with open(STATE_FILE, "w") as f:
             json.dump(state, f, indent=4)
-        print("State successfully saved to mega_state.json")
     except Exception as e:
         print(f"Error saving state: {e}")
 
@@ -74,17 +69,15 @@ def scan_mega_account(account_info):
     mega = Mega()
     m = None
     
-    # Retry mechanism with backoff delay for API rate limits
     for attempt in range(4):
         try:
-            time.sleep(8)  # Rate limit safety delay
+            time.sleep(8)
             m = mega.login(email, password)
             if m:
                 break
         except Exception as e:
             print(f"Attempt {attempt+1} failed for {acc_name}: {e}")
             if attempt == 3:
-                print(f"CRITICAL: Failed to login to {acc_name} after 4 attempts.")
                 return {}, 0, 0, {}
             time.sleep(15)
     
@@ -116,7 +109,6 @@ def scan_mega_account(account_info):
                 folder_name = folder_map.get(parent_id, "Root / Main")
                 is_vid = str(file_name).lower().endswith(video_extensions)
                 
-                # Unique key using email to prevent overlapping across accounts
                 unique_key = f"{email}_{file_id}"
                 
                 account_files[unique_key] = {
@@ -134,7 +126,7 @@ def scan_mega_account(account_info):
                     video_count += 1
                     acc_folders[folder_name]["videos"] += 1
 
-    print(f"Done scanning {acc_name}: {total_files} files, {video_count} videos, {len(acc_folders)} folders.")
+    print(f"Done scanning {acc_name}: {total_files} files, {video_count} videos.")
     return account_files, total_files, video_count, acc_folders
 
 if __name__ == "__main__":
@@ -155,11 +147,11 @@ if __name__ == "__main__":
         try:
             files, t_files, v_count, acc_folders = scan_mega_account(acc)
             
-            # Aggregate files & stats
             combined_files.update(files)
             total_files += t_files
             total_videos += v_count
 
+            # Safely add folder counts together across accounts
             for f_name, stats in acc_folders.items():
                 if f_name not in combined_folders:
                     combined_folders[f_name] = {"files": 0, "videos": 0}
@@ -169,11 +161,9 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Error scanning {acc['name']}: {e}")
 
-    # Recently Added & Deleted Calculation
     added_names = [v["name"] for k, v in combined_files.items() if k not in prev_files]
     deleted_names = [v["name"] for k, v in prev_files.items() if k not in combined_files]
 
-    # Report Header
     report_lines = [
         "🌌 <b>MEGA CLOUD FULL REPORT</b>\n",
         f"📁 Total Files: {total_files}",
@@ -182,24 +172,20 @@ if __name__ == "__main__":
         f"🗑️ Recently Deleted / Trash: {len(deleted_names)}\n"
     ]
 
-    # Display Added Files (Max 15)
     if added_names:
         report_lines.append("➕ <b>ADDED FILES:</b>")
         for name in added_names[:15]:
             report_lines.append(f"• {name}")
         report_lines.append("")
 
-    # Display Deleted Files (Max 15)
     if deleted_names:
         report_lines.append("🗑️ <b>DELETED FILES:</b>")
         for name in deleted_names[:15]:
             report_lines.append(f"• {name}")
         report_lines.append("")
 
-    # Folders Breakdown Section
     report_lines.append("📂 <b>FOLDERS BREAKDOWN:</b>")
 
-    # Ascending Order Sorting Logic (Root -> F1 -> F2 -> F10)
     def sort_key(name):
         if name == "Root / Main":
             return (0, 0, name)
@@ -216,13 +202,10 @@ if __name__ == "__main__":
 
     final_report = "\n".join(report_lines)
 
-    # Send to Telegram
     send_telegram_message(final_report)
 
-    # Save current state for next run comparison
     save_state({
         "files": combined_files,
         "max_video_count": total_videos,
         "total_files": total_files
     })
-                
