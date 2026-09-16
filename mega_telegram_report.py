@@ -10,26 +10,21 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 STATE_FILE = "mega_state.json"
 video_extensions = ('.mp4', '.mkv', '.avi', '.mov', '.flv', '.webm', '.3gp', '.m4v')
+image_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')
 
 def get_all_mega_credentials():
     accounts = []
-    
-    # Direct fetch to ensure no index skips
-    e1 = os.environ.get("MEGA_EMAIL_1") or os.environ.get("MEGA_EMAIL")
-    p1 = os.environ.get("MEGA_PASSWORD_1") or os.environ.get("MEGA_PASSWORD")
-    if e1 and p1:
-        accounts.append({"email": e1.strip(), "pass": p1.strip(), "name": "Account 1"})
-    else:
-        print("⚠️ Warning: Account 1 Credentials missing in Environment!")
-
-    e2 = os.environ.get("MEGA_EMAIL_2")
-    p2 = os.environ.get("MEGA_PASSWORD_2")
-    if e2 and p2:
-        accounts.append({"email": e2.strip(), "pass": p2.strip(), "name": "Account 2"})
-    else:
-        print("⚠️ Warning: Account 2 Credentials missing in Environment! Check GitHub Secrets.")
-
-    print(f"Total Accounts Found to Process: {len(accounts)}")
+    i = 1
+    while True:
+        e = os.environ.get(f"MEGA_EMAIL_{i}") or (os.environ.get("MEGA_EMAIL") if i == 1 else None)
+        p = os.environ.get(f"MEGA_PASSWORD_{i}") or (os.environ.get("MEGA_PASSWORD") if i == 1 else None)
+        if e and p:
+            accounts.append({"email": e.strip(), "pass": p.strip(), "name": f"Account {i}"})
+            i += 1
+        else:
+            if i > 10:
+                break
+            i += 1
     return accounts
 
 def load_state():
@@ -39,7 +34,7 @@ def load_state():
                 return json.load(f)
         except Exception as e:
             print(f"Error loading state: {e}")
-    return {"files": {}, "max_video_count": 0, "total_files": 0}
+    return {"files": {}}
 
 def save_state(state):
     try:
@@ -56,20 +51,17 @@ def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     MAX_LEN = 3800
     
-    if len(text) <= MAX_LEN:
-        chunks = [text]
-    else:
-        lines = text.split("\n")
-        chunks = []
-        current_chunk = ""
-        for line in lines:
-            if len(current_chunk) + len(line) + 1 > MAX_LEN:
-                chunks.append(current_chunk)
-                current_chunk = line + "\n"
-            else:
-                current_chunk += line + "\n"
-        if current_chunk:
+    lines = text.split("\n")
+    chunks = []
+    current_chunk = ""
+    for line in lines:
+        if len(current_chunk) + len(line) + 1 > MAX_LEN:
             chunks.append(current_chunk)
+            current_chunk = line + "\n"
+        else:
+            current_chunk += line + "\n"
+    if current_chunk:
+        chunks.append(current_chunk)
 
     for idx, chunk in enumerate(chunks):
         payload = {
@@ -78,7 +70,6 @@ def send_telegram_message(text):
             'parse_mode': 'HTML'
         }
         res = requests.post(url, data=payload)
-        print(f"Telegram Chunk {idx+1}/{len(chunks)} Status:", res.status_code)
         time.sleep(1)
 
 def scan_mega_account(account_info):
@@ -86,38 +77,27 @@ def scan_mega_account(account_info):
     password = account_info["pass"]
     acc_name = account_info["name"]
 
-    print(f"\n==========================================")
-    print(f"Starting Scan for {acc_name} ({email[:4]}***)")
-    print(f"==========================================")
-    
+    mega = Mega()
     m = None
     
     for attempt in range(1, 4):
         try:
-            print(f"Login Attempt {attempt} for {acc_name}...")
-            time.sleep(10) # Safety delay to avoid IP rate limit
-            mega = Mega()
+            time.sleep(5)
             m = mega.login(email, password)
             if m:
-                print(f"✅ Successful Login: {acc_name}")
                 break
         except Exception as e:
-            print(f"❌ Attempt {attempt} Failed for {acc_name}: {e}")
             if attempt == 3:
-                print(f"🚨 SKIPPING {acc_name}: Could not log in after 3 attempts.")
-                return {}, 0, 0, {}
-            time.sleep(15)
+                return {}, {}
+            time.sleep(10)
     
     try:
         files_data = m.get_files()
     except Exception as e:
-        print(f"Error fetching files for {acc_name}: {e}")
-        return {}, 0, 0, {}
+        return {}, {}
 
     account_files = {}
     folder_map = {}
-    video_count = 0
-    total_files = 0
     acc_folders = {}
 
     if isinstance(files_data, dict):
@@ -129,93 +109,73 @@ def scan_mega_account(account_info):
 
         for file_id, file_info in files_data.items():
             if isinstance(file_info, dict) and file_info.get('t') == 0:
-                total_files += 1
                 attr = file_info.get('a', {})
                 file_name = attr.get('n', 'Unknown') if isinstance(attr, dict) else 'Unknown'
                 parent_id = file_info.get('p', '')
                 folder_name = folder_map.get(parent_id, "Root / Main")
-                is_vid = str(file_name).lower().endswith(video_extensions)
+                
+                name_lower = str(file_name).lower()
+                is_vid = name_lower.endswith(video_extensions)
+                is_img = name_lower.endswith(image_extensions)
                 
                 unique_key = f"{email}_{file_id}"
                 
                 account_files[unique_key] = {
                     "name": file_name,
                     "folder": folder_name,
-                    "account": acc_name,
-                    "is_video": is_vid
+                    "account": acc_name
                 }
                 
                 if folder_name not in acc_folders:
-                    acc_folders[folder_name] = {"files": 0, "videos": 0}
-                acc_folders[folder_name]["files"] += 1
-
+                    acc_folders[folder_name] = {"videos": 0, "images": 0, "total": 0}
+                
+                acc_folders[folder_name]["total"] += 1
                 if is_vid:
-                    video_count += 1
                     acc_folders[folder_name]["videos"] += 1
+                elif is_img:
+                    acc_folders[folder_name]["images"] += 1
 
-    print(f"Summary for {acc_name}: Total Files = {total_files}, Videos = {video_count}")
-    return account_files, total_files, video_count, acc_folders
+    return account_files, acc_folders
 
 if __name__ == "__main__":
     mega_accounts = get_all_mega_credentials()
     if not mega_accounts:
-        print("Error: No Mega accounts configured properly.")
         exit(1)
 
     prev_state = load_state()
     prev_files = prev_state.get("files", {})
 
     combined_files = {}
-    total_files = 0
-    total_videos = 0
     combined_folders = {}
-    
-    scanned_acc_count = 0
 
     for acc in mega_accounts:
         try:
-            files, t_files, v_count, acc_folders = scan_mega_account(acc)
-            
+            files, acc_folders = scan_mega_account(acc)
             if files:
-                scanned_acc_count += 1
                 combined_files.update(files)
-                total_files += t_files
-                total_videos += v_count
-
                 for f_name, stats in acc_folders.items():
                     if f_name not in combined_folders:
-                        combined_folders[f_name] = {"files": 0, "videos": 0}
-                    combined_folders[f_name]["files"] += stats["files"]
+                        combined_folders[f_name] = {"videos": 0, "images": 0, "total": 0}
                     combined_folders[f_name]["videos"] += stats["videos"]
-
+                    combined_folders[f_name]["images"] += stats["images"]
+                    combined_folders[f_name]["total"] += stats["total"]
         except Exception as e:
-            print(f"Error processing {acc['name']}: {e}")
+            print(f"Error scanning {acc['name']}: {e}")
 
-    added_names = [v["name"] for k, v in combined_files.items() if k not in prev_files]
-    deleted_names = [v["name"] for k, v in prev_files.items() if k not in combined_files]
+    added_files = [v["name"] for k, v in combined_files.items() if k not in prev_files]
+    deleted_files = [v["name"] for k, v in prev_files.items() if k not in combined_files]
 
+    net_variance = len(added_files) - len(deleted_files)
+    variance_str = f"+{net_variance}" if net_variance >= 0 else f"{net_variance}"
+
+    # Build Response Text
     report_lines = [
-        "🌌 <b>MEGA CLOUD FULL REPORT</b>\n",
-        f"👥 Scanned Accounts: {scanned_acc_count}/{len(mega_accounts)}",
-        f"📁 Total Files: {total_files}",
-        f"🎬 Total Videos: {total_videos}",
-        f"➕ Recently Added: +{len(added_names)}",
-        f"🗑️ Recently Deleted / Trash: {len(deleted_names)}\n"
+        "📊 <b>DRIVE MONITOR REPORT</b>\n",
+        "<pre>",
+        "---------------------------------------------",
+        "FOLDER NAME           | VD | IM | TL |",
+        "---------------------------------------------"
     ]
-
-    if added_names:
-        report_lines.append("➕ <b>ADDED FILES:</b>")
-        for name in added_names[:15]:
-            report_lines.append(f"• {name}")
-        report_lines.append("")
-
-    if deleted_names:
-        report_lines.append("🗑️ <b>DELETED FILES:</b>")
-        for name in deleted_names[:15]:
-            report_lines.append(f"• {name}")
-        report_lines.append("")
-
-    report_lines.append("📂 <b>FOLDERS BREAKDOWN:</b>")
 
     def sort_key(name):
         if name == "Root / Main":
@@ -229,15 +189,57 @@ if __name__ == "__main__":
 
     for f_name in sorted_folders:
         stats = combined_folders[f_name]
-        report_lines.append(f"• {f_name}: {stats['videos']}")
+        f_display = (f_name[:21]).ljust(21)
+        vd_str = f"{stats['videos']:02d}".rjust(2)
+        im_str = f"{stats['images']:03d}".rjust(3)
+        tl_str = f"{stats['total']:03d}".rjust(3)
+        report_lines.append(f"{f_display} | {vd_str} | {im_str} | {tl_str}")
+
+    report_lines.extend([
+        "---------------------------------------------",
+        "VD: Videos | IM: Images | TL: Total",
+        "</pre>\n",
+        "━━━━━━━━━━━━━━━━━━━━━━",
+        "📋 <b>CHANGE REPORT</b>",
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+    ])
+
+    # Emergency Alert & File Names Section
+    if deleted_files:
+        report_lines.append("🚨 <b>EMERGENCY: MISSING/DELETED FILES FOUND!</b>")
+        report_lines.append("➖ <b>DELETED FILES LIST:</b>")
+        for d_name in deleted_files[:20]:
+            report_lines.append(f"• <code>{d_name}</code>")
+        if len(deleted_files) > 20:
+            report_lines.append(f"<i>...and {len(deleted_files) - 20} more deleted.</i>")
+        report_lines.append("")
+    
+    if added_files:
+        report_lines.append("➕ <b>NEWLY ADDED FILES LIST:</b>")
+        for a_name in added_files[:20]:
+            report_lines.append(f"• <code>{a_name}</code>")
+        if len(added_files) > 20:
+            report_lines.append(f"<i>...and {len(added_files) - 20} more added.</i>")
+        report_lines.append("")
+
+    if not deleted_files and not added_files:
+        report_lines.append("Looking Good (No missing files found)\n")
+
+    scan_time = time.strftime("%d-%b-%Y %I:%M %p")
+
+    report_lines.extend([
+        "━━━━━━━━━━━━━━━━━━━━━━",
+        "📊 <b>SUMMARY</b>",
+        "━━━━━━━━━━━━━━━━━━━━━━\n",
+        f"➕ Added (New)   : {len(added_files)} Files",
+        f"➖ Missing (🚨)  : {len(deleted_files)} Files",
+        f"📈 Net Variance  : {variance_str} File(s)\n",
+        f"🕒 Last Scan : {scan_time}"
+    ])
 
     final_report = "\n".join(report_lines)
 
     send_telegram_message(final_report)
 
-    save_state({
-        "files": combined_files,
-        "max_video_count": total_videos,
-        "total_files": total_files
-    })
+    save_state({"files": combined_files})
     
