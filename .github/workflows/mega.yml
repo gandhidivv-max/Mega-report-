@@ -20,7 +20,7 @@ jobs:
       - name: Install Dependencies
         run: |
           pip install --upgrade pip
-          pip install mega.py requests pillow tenacity==8.2.3
+          pip install pycryptodome mega.py requests pillow
 
       - name: Run Mega Automation Script
         env:
