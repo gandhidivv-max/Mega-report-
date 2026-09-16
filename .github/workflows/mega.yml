@@ -24,6 +24,12 @@ jobs:
 
       - name: Run Mega Automation Script
         env:
+          MEGA_EMAIL_1: ${{ secrets.MEGA_EMAIL_1 }}
+          MEGA_PASSWORD_1: ${{ secrets.MEGA_PASSWORD_1 }}
+          MEGA_EMAIL_2: ${{ secrets.MEGA_EMAIL_2 }}
+          MEGA_PASSWORD_2: ${{ secrets.MEGA_PASSWORD_2 }}
+          MEGA_EMAIL_3: ${{ secrets.MEGA_EMAIL_3 }}
+          MEGA_PASSWORD_3: ${{ secrets.MEGA_PASSWORD_3 }}
           MEGA_EMAIL: ${{ secrets.MEGA_EMAIL }}
           MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
