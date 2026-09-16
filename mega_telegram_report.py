@@ -14,36 +14,24 @@ video_extensions = ('.mp4', '.mkv', '.avi', '.mov', '.flv', '.webm', '.3gp', '.m
 def get_all_mega_credentials():
     accounts = []
     
-    # Check Account 1
-    e1 = os.environ.get("MEGA_EMAIL_1") or os.environ.get("MEGA_EMAIL")
-    p1 = os.environ.get("MEGA_PASSWORD_1") or os.environ.get("MEGA_PASSWORD")
-    if e1 and p1:
-        accounts.append({"email": e1.strip(), "pass": p1.strip(), "name": "Account 1"})
-
-    # Check Account 2
-    e2 = os.environ.get("MEGA_EMAIL_2")
-    p2 = os.environ.get("MEGA_PASSWORD_2")
-    if e2 and p2:
-        accounts.append({"email": e2.strip(), "pass": p2.strip(), "name": "Account 2"})
-
-    # Check Account 3 (In case added in future)
-    e3 = os.environ.get("MEGA_EMAIL_3")
-    p3 = os.environ.get("MEGA_PASSWORD_3")
-    if e3 and p3:
-        accounts.append({"email": e3.strip(), "pass": p3.strip(), "name": "Account 3"})
-
-    # Dynamic fallback check for 4, 5, etc.
-    i = 4
+    # Explicit mapping for sequentially numbered secrets
+    i = 1
     while True:
-        e = os.environ.get(f"MEGA_EMAIL_{i}")
-        p = os.environ.get(f"MEGA_PASSWORD_{i}")
+        e = os.environ.get(f"MEGA_EMAIL_{i}") or (os.environ.get("MEGA_EMAIL") if i == 1 else None)
+        p = os.environ.get(f"MEGA_PASSWORD_{i}") or (os.environ.get("MEGA_PASSWORD") if i == 1 else None)
+        
         if e and p:
             accounts.append({"email": e.strip(), "pass": p.strip(), "name": f"Account {i}"})
             i += 1
         else:
-            break
+            # Check if there is any other account index remaining
+            if i > 10:  # Check up to 10 accounts safety limit
+                break
+            i += 1
 
-    print(f"Total Accounts Detected and ready to scan: {len(accounts)}")
+    print(f"Total Accounts Detected to Scan: {len(accounts)}")
+    for acc in accounts:
+        print(f" -> Found: {acc['name']} ({acc['email'][:3]}***)")
     return accounts
 
 def load_state():
@@ -51,8 +39,8 @@ def load_state():
         try:
             with open(STATE_FILE, "r") as f:
                 return json.load(f)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error loading state: {e}")
     return {"files": {}, "max_video_count": 0, "total_files": 0}
 
 def save_state(state):
@@ -80,7 +68,7 @@ def scan_mega_account(account_info):
     password = account_info["pass"]
     acc_name = account_info["name"]
 
-    print(f"Scanning {acc_name} ({email})...")
+    print(f"\n--- Scanning {acc_name} ({email}) ---")
     mega = Mega()
     m = None
     
@@ -89,11 +77,12 @@ def scan_mega_account(account_info):
             time.sleep(5)
             m = mega.login(email, password)
             if m:
+                print(f"Successfully logged in to {acc_name}")
                 break
         except Exception as e:
-            print(f"Attempt {attempt+1} failed for {acc_name}: {e}")
+            print(f"Login attempt {attempt+1} failed for {acc_name}: {e}")
             if attempt == 3:
-                print(f"Failed to scan {acc_name}")
+                print(f"CRITICAL: Failed to login to {acc_name}")
                 return {}, 0, 0, {}
             time.sleep(10)
     
@@ -142,13 +131,13 @@ def scan_mega_account(account_info):
                     video_count += 1
                     acc_folders[folder_name]["videos"] += 1
 
-    print(f"Done scanning {acc_name}: {total_files} files, {video_count} videos.")
+    print(f"Done scanning {acc_name}: {total_files} Total Files, {video_count} Videos.")
     return account_files, total_files, video_count, acc_folders
 
 if __name__ == "__main__":
     mega_accounts = get_all_mega_credentials()
     if not mega_accounts:
-        print("No Mega credentials provided!")
+        print("No Mega credentials detected!")
         exit()
 
     prev_state = load_state()
@@ -174,7 +163,7 @@ if __name__ == "__main__":
                 combined_folders[f_name]["videos"] += stats["videos"]
 
         except Exception as e:
-            print(f"Error scanning {acc['name']}: {e}")
+            print(f"Error processing {acc['name']}: {e}")
 
     added_names = [v["name"] for k, v in combined_files.items() if k not in prev_files]
     deleted_names = [v["name"] for k, v in prev_files.items() if k not in combined_files]
@@ -224,4 +213,4 @@ if __name__ == "__main__":
         "max_video_count": total_videos,
         "total_files": total_files
     })
-    
+                
