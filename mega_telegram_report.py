@@ -2,7 +2,8 @@ import os
 import json
 import time
 import requests
-import urllib.parse
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
 from mega import Mega
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -43,90 +44,76 @@ def save_state(state):
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=4)
 
-def send_telegram_photo_url(photo_url):
+def send_telegram_photo_bytes(image_bytes):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "photo": photo_url
-    }
-    requests.post(url, json=payload)
+    files = {'photo': ('dashboard.png', image_bytes, 'image/png')}
+    payload = {'chat_id': TELEGRAM_CHAT_ID}
+    requests.post(url, data=payload, files=files)
 
-def generate_svg_dashboard_url(accounts_data, total_files, total_videos, recently_added, recently_deleted, folder_summary):
-    # ఫోల్డర్ వివరాలు
-    folder_text_list = []
-    for f_name, stats in list(folder_summary.items())[:3]:
-        folder_text_list.append(f"{f_name}: {stats['videos']} Vids")
-    folder_str = "  |  ".join(folder_text_list) if folder_text_list else "None"
+def generate_pillow_dashboard(accounts_data, total_files, total_videos, recently_added, recently_deleted, folder_summary):
+    width, height = 800, 520
+    img = Image.new('RGB', (width, height), color='#0f172a')
+    draw = ImageDraw.Draw(img)
 
-    # SVG గ్రాఫ్ బార్లు క్రియేట్ చేయడం
-    max_vids = max([acc["videos"] for acc in accounts_data] + [1])
-    bars_svg = ""
-    colors = ["#00f2fe", "#e11d73", "#ff9a00"]
+    font_title = font_main = font_sub = ImageFont.load_default()
+
+    # Header
+    draw.rectangle([(0, 0), (width, 55)], fill='#1e293b')
+    draw.text((25, 18), "MEGA CLOUD LIVE DASHBOARD", fill='#00f2fe', font=font_title)
+
+    # 4 Stat Cards Box Dimensions
+    cards = [
+        ("TOTAL FILES", str(total_files), "#00f2fe", 25),
+        ("TOTAL VIDEOS", str(total_videos), "#e11d73", 215),
+        ("RECENTLY ADDED", f"+{recently_added}", "#22c55e", 405),
+        ("DELETED", str(recently_deleted), "#ef4444", 595),
+    ]
+
+    for label, val, color, x in cards:
+        draw.rectangle([(x, 75), (x + 180, 145)], fill='#1e293b', outline=color, width=2)
+        draw.text((x + 12, 88), label, fill='#94a3b8', font=font_sub)
+        draw.text((x + 12, 110), val, fill=color, font=font_main)
+
+    # Folders Section Box
+    draw.rectangle([(25, 165), (775, 230)], fill='#1e293b')
+    draw.text((40, 175), "FOLDERS BREAKDOWN:", fill='#38bdf8', font=font_sub)
     
-    x_pos = 70
+    y_folder = 198
+    folder_items = list(folder_summary.items())[:3]
+    if folder_items:
+        f_text = "   |   ".join([f"{f_name}: {stats['videos']} Videos ({stats['files']} Files)" for f_name, stats in folder_items])
+        draw.text((40, y_folder), f_text, fill='#ffffff', font=font_sub)
+    else:
+        draw.text((40, y_folder), "No folders found", fill='#ffffff', font=font_sub)
+
+    # Bar Graph Container
+    draw.text((25, 250), "VIDEOS PER ACCOUNT", fill='#38bdf8', font=font_sub)
+    draw.rectangle([(25, 270), (775, 490)], fill='#0b1120')
+
+    # Draw Graph Axes Lines
+    draw.line([(45, 450), (755, 450)], fill='#334155', width=1)
+
+    # Draw Bars
+    max_vids = max([acc["videos"] for acc in accounts_data] + [1])
+    colors = ["#00f2fe", "#e11d73", "#ff9a00"]
+    x_pos = 100
+
     for i, acc in enumerate(accounts_data):
-        height = int((acc["videos"] / max_vids) * 140)
-        y_pos = 420 - height
+        bar_h = int((acc["videos"] / max_vids) * 140)
+        y_pos = 450 - bar_h
         bar_color = colors[i % len(colors)]
-        
-        bars_svg += f'''
-        <rect x="{x_pos}" y="{y_pos}" width="65" height="{height}" rx="6" fill="{bar_color}" />
-        <text x="{x_pos + 32}" y="{y_pos - 10}" fill="#ffffff" font-size="16" font-weight="bold" text-anchor="middle">{acc['videos']}</text>
-        <text x="{x_pos + 32}" y="445" fill="#94a3b8" font-size="14" font-weight="bold" text-anchor="middle">{acc['name']}</text>
-        '''
-        x_pos += 220
 
-    # పూర్తి SVG Canvas టెంప్లేట్ (Dashboard Card)
-    svg_code = f'''<svg xmlns="http://www.w3.org/2000/svg" width="750" height="480" viewBox="0 0 750 480">
-        <rect width="100%" height="100%" fill="#0f172a"/>
+        draw.rectangle([(x_pos, y_pos), (x_pos + 70, 450)], fill=bar_color)
+        draw.text((x_pos + 25, y_pos - 18), str(acc['videos']), fill='#ffffff', font=font_main)
+        draw.text((x_pos + 10, 460), acc['name'], fill='#94a3b8', font=font_sub)
         
-        <!-- Header Banner -->
-        <rect x="0" y="0" width="750" height="55" fill="#1e293b"/>
-        <text x="25" y="36" fill="#00f2fe" font-size="20" font-family="Arial" font-weight="bold">MEGA CLOUD LIVE DASHBOARD</text>
-        
-        <!-- Stat Cards -->
-        <!-- Total Files -->
-        <rect x="25" y="75" width="160" height="75" rx="8" fill="#1e293b" stroke="#00f2fe" stroke-width="2"/>
-        <text x="40" y="98" fill="#94a3b8" font-size="11" font-family="Arial" font-weight="bold">TOTAL FILES</text>
-        <text x="40" y="132" fill="#ffffff" font-size="22" font-family="Arial" font-weight="bold">{total_files}</text>
-        
-        <!-- Total Videos -->
-        <rect x="200" y="75" width="160" height="75" rx="8" fill="#1e293b" stroke="#e11d73" stroke-width="2"/>
-        <text x="215" y="98" fill="#94a3b8" font-size="11" font-family="Arial" font-weight="bold">TOTAL VIDEOS</text>
-        <text x="215" y="132" fill="#ffffff" font-size="22" font-family="Arial" font-weight="bold">{total_videos}</text>
-        
-        <!-- Added -->
-        <rect x="375" y="75" width="160" height="75" rx="8" fill="#1e293b" stroke="#22c55e" stroke-width="2"/>
-        <text x="390" y="98" fill="#94a3b8" font-size="11" font-family="Arial" font-weight="bold">RECENTLY ADDED</text>
-        <text x="390" y="132" fill="#22c55e" font-size="22" font-family="Arial" font-weight="bold">+{recently_added}</text>
-        
-        <!-- Deleted -->
-        <rect x="550" y="75" width="160" height="75" rx="8" fill="#1e293b" stroke="#ef4444" stroke-width="2"/>
-        <text x="565" y="98" fill="#94a3b8" font-size="11" font-family="Arial" font-weight="bold">DELETED</text>
-        <text x="565" y="132" fill="#ef4444" font-size="22" font-family="Arial" font-weight="bold">{recently_deleted}</text>
+        x_pos += 230
 
-        <!-- Folders Section -->
-        <rect x="25" y="165" width="685" height="45" rx="6" fill="#1e293b"/>
-        <text x="40" y="192" fill="#38bdf8" font-size="13" font-family="Arial" font-weight="bold">FOLDERS: <tspan fill="#ffffff">{folder_str}</tspan></text>
-
-        <!-- Graph Container -->
-        <text x="25" y="240" fill="#38bdf8" font-size="13" font-family="Arial" font-weight="bold">VIDEOS PER ACCOUNT</text>
-        <rect x="25" y="255" width="685" height="200" rx="8" fill="#0b1120"/>
-        
-        <!-- Horizontal Grid Lines -->
-        <line x1="45" y1="420" x2="690" y2="420" stroke="#334155" stroke-width="1"/>
-        <line x1="45" y1="350" x2="690" y2="350" stroke="#1e293b" stroke-width="1"/>
-        <line x1="45" y1="280" x2="690" y2="280" stroke="#1e293b" stroke-width="1"/>
-        
-        <!-- Bars -->
-        {bars_svg}
-    </svg>'''
-
-    # SVG ని Direct Chart Image URL గా మార్చడం
-    encoded_svg = urllib.parse.quote(svg_code)
-    return f"https://quickchart.io/chart?req={encoded_svg}"
+    buffer = BytesIO()
+    img.save(buffer, format='PNG')
+    return buffer.getvalue()
 
 def scan_mega_account(email, password):
     mega = Mega()
@@ -218,7 +205,7 @@ if __name__ == "__main__":
             if v.get("is_video"):
                 folder_summary[f_name]["videos"] += 1
 
-        chart_url = generate_svg_dashboard_url(
+        img_bytes = generate_pillow_dashboard(
             accounts_chart_data, 
             total_files, 
             total_videos, 
@@ -227,7 +214,7 @@ if __name__ == "__main__":
             folder_summary
         )
 
-        send_telegram_photo_url(chart_url)
+        send_telegram_photo_bytes(img_bytes)
 
         save_state({
             "files": combined_files,
@@ -236,4 +223,4 @@ if __name__ == "__main__":
         })
     except Exception:
         pass
-        
+    
