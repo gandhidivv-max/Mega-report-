@@ -54,8 +54,9 @@ def send_telegram_photo_bytes(image_bytes):
     res = requests.post(url, data=payload, files=files)
     print("Telegram Response:", res.text)
 
-def generate_pillow_dashboard(accounts_data, total_files, total_videos, recently_added, recently_deleted, folder_summary):
-    width, height = 800, 520
+def generate_pillow_dashboard(accounts_data, total_files, total_videos, added_names, deleted_names, folder_summary):
+    # dynamic height for detailed report
+    width, height = 900, 750
     img = Image.new('RGB', (width, height), color='#0f172a')
     draw = ImageDraw.Draw(img)
 
@@ -66,54 +67,77 @@ def generate_pillow_dashboard(accounts_data, total_files, total_videos, recently
 
     # Header
     draw.rectangle([(0, 0), (width, 55)], fill='#1e293b')
-    draw.text((25, 18), "MEGA CLOUD LIVE DASHBOARD", fill='#00f2fe', font=font)
+    draw.text((25, 18), "MEGA CLOUD DETAILED DASHBOARD", fill='#00f2fe', font=font)
 
-    # 4 Stat Cards
+    # Stat Header Cards
     cards = [
         ("TOTAL FILES", str(total_files), "#00f2fe", 25),
-        ("TOTAL VIDEOS", str(total_videos), "#e11d73", 215),
-        ("RECENTLY ADDED", f"+{recently_added}", "#22c55e", 405),
-        ("DELETED", str(recently_deleted), "#ef4444", 595),
+        ("TOTAL VIDEOS", str(total_videos), "#e11d73", 240),
+        ("ADDED FILES", str(len(added_names)), "#22c55e", 455),
+        ("DELETED FILES", str(len(deleted_names)), "#ef4444", 670),
     ]
 
     for label, val, color, x in cards:
-        draw.rectangle([(x, 75), (x + 180, 145)], fill='#1e293b', outline=color, width=2)
+        draw.rectangle([(x, 75), (x + 200, 140)], fill='#1e293b', outline=color, width=2)
         draw.text((x + 12, 88), label, fill='#94a3b8', font=font)
         draw.text((x + 12, 110), val, fill=color, font=font)
 
-    # Folders Breakdown Section
-    draw.rectangle([(25, 165), (775, 230)], fill='#1e293b')
-    draw.text((40, 175), "FOLDERS BREAKDOWN:", fill='#38bdf8', font=font)
+    # Folders Breakdown Section (Displays up to 10 folders)
+    draw.text((25, 160), "ALL FOLDERS BREAKDOWN", fill='#38bdf8', font=font)
+    draw.rectangle([(25, 180), (875, 330)], fill='#1e293b')
     
-    folder_items = list(folder_summary.items())[:3]
-    if folder_items:
-        f_text = "   |   ".join([f"{f_name}: {stats['videos']} Videos ({stats['files']} Files)" for f_name, stats in folder_items])
-        draw.text((40, 198), f_text, fill='#ffffff', font=font)
+    y_folder = 192
+    if folder_summary:
+        for f_name, stats in list(folder_summary.items())[:8]:
+            line = f"• {f_name[:30]}: {stats['videos']} Videos ({stats['files']} Total Files)"
+            draw.text((40, y_folder), line, fill='#ffffff', font=font)
+            y_folder += 16
     else:
-        draw.text((40, 198), "No folders found", fill='#ffffff', font=font)
+        draw.text((40, 192), "No folders found", fill='#ffffff', font=font)
 
-    # Bar Graph Box
-    draw.text((25, 250), "VIDEOS PER ACCOUNT", fill='#38bdf8', font=font)
-    draw.rectangle([(25, 270), (775, 490)], fill='#0b1120')
+    # File Logs: Added & Deleted Names
+    draw.text((25, 350), "RECENT FILE UPDATES", fill='#38bdf8', font=font)
+    draw.rectangle([(25, 370), (435, 520)], fill='#1e293b', outline='#22c55e', width=1)
+    draw.text((35, 378), "RECENTLY ADDED FILES:", fill='#22c55e', font=font)
+    
+    y_add = 400
+    if added_names:
+        for name in added_names[:5]:
+            draw.text((35, y_add), f"+ {name[:40]}", fill='#ffffff', font=font)
+            y_add += 20
+    else:
+        draw.text((35, 400), "No new files added recently", fill='#94a3b8', font=font)
 
-    # Draw Axes Line
-    draw.line([(45, 450), (755, 450)], fill='#334155', width=1)
+    draw.rectangle([(465, 370), (875, 520)], fill='#1e293b', outline='#ef4444', width=1)
+    draw.text((475, 378), "RECENTLY DELETED FILES:", fill='#ef4444', font=font)
+    
+    y_del = 400
+    if deleted_names:
+        for name in deleted_names[:5]:
+            draw.text((475, y_del), f"- {name[:40]}", fill='#ffffff', font=font)
+            y_del += 20
+    else:
+        draw.text((475, 400), "No files deleted recently", fill='#94a3b8', font=font)
 
-    # Bars
+    # Bar Graph Box (Videos per account)
+    draw.text((25, 540), "VIDEOS PER ACCOUNT", fill='#38bdf8', font=font)
+    draw.rectangle([(25, 560), (875, 720)], fill='#0b1120')
+    draw.line([(45, 680), (855, 680)], fill='#334155', width=1)
+
     max_vids = max([acc["videos"] for acc in accounts_data] + [1])
     colors = ["#00f2fe", "#e11d73", "#ff9a00"]
-    x_pos = 100
+    x_pos = 120
 
     for i, acc in enumerate(accounts_data):
-        bar_h = int((acc["videos"] / max_vids) * 140)
-        y_pos = 450 - bar_h
+        bar_h = int((acc["videos"] / max_vids) * 90)
+        y_pos = 680 - bar_h
         bar_color = colors[i % len(colors)]
 
-        draw.rectangle([(x_pos, y_pos), (x_pos + 70, 450)], fill=bar_color)
-        draw.text((x_pos + 25, max(y_pos - 18, 280)), str(acc['videos']), fill='#ffffff', font=font)
-        draw.text((x_pos + 10, 460), acc['name'], fill='#94a3b8', font=font)
+        draw.rectangle([(x_pos, y_pos), (x_pos + 80, 680)], fill=bar_color)
+        draw.text((x_pos + 30, max(y_pos - 18, 570)), str(acc['videos']), fill='#ffffff', font=font)
+        draw.text((x_pos + 15, 690), acc['name'], fill='#94a3b8', font=font)
         
-        x_pos += 230
+        x_pos += 250
 
     buffer = BytesIO()
     img.save(buffer, format='PNG')
@@ -134,13 +158,11 @@ def scan_mega_account(email, password):
                 raise e
             time.sleep(15)
     
-    trash_id = getattr(m, 'trash_id', None) or getattr(m, 'trash_folder', None)
     files_data = m.get_files()
     account_files = {}
     folder_map = {}
     video_count = 0
     total_files = 0
-    deleted_bin_count = 0
 
     if isinstance(files_data, dict):
         for node_id, node_info in files_data.items():
@@ -151,26 +173,23 @@ def scan_mega_account(email, password):
 
         for file_id, file_info in files_data.items():
             if isinstance(file_info, dict) and file_info.get('t') == 0:
+                total_files += 1
                 attr = file_info.get('a', {})
                 file_name = attr.get('n', 'Unknown') if isinstance(attr, dict) else 'Unknown'
                 parent_id = file_info.get('p', '')
+                folder_name = folder_map.get(parent_id, "Root")
+                is_vid = str(file_name).lower().endswith(video_extensions)
+                
+                unique_key = f"{email}_{file_id}"
+                account_files[unique_key] = {
+                    "name": file_name,
+                    "folder": folder_name,
+                    "is_video": is_vid
+                }
+                if is_vid:
+                    video_count += 1
 
-                if trash_id and parent_id == trash_id:
-                    deleted_bin_count += 1
-                else:
-                    total_files += 1
-                    folder_name = folder_map.get(parent_id, "Root")
-                    is_vid = str(file_name).lower().endswith(video_extensions)
-                    unique_key = f"{email}_{file_id}"
-                    account_files[unique_key] = {
-                        "name": file_name,
-                        "folder": folder_name,
-                        "is_video": is_vid
-                    }
-                    if is_vid:
-                        video_count += 1
-
-    return account_files, total_files, video_count, deleted_bin_count
+    return account_files, total_files, video_count
 
 if __name__ == "__main__":
     mega_accounts = get_all_mega_credentials()
@@ -184,24 +203,24 @@ if __name__ == "__main__":
     combined_files = {}
     total_files = 0
     total_videos = 0
-    total_deleted_bin = 0
     accounts_chart_data = []
 
     for acc in mega_accounts:
         try:
-            files, t_files, v_count, d_bin = scan_mega_account(acc["email"], acc["pass"])
+            files, t_files, v_count = scan_mega_account(acc["email"], acc["pass"])
             combined_files.update(files)
             total_files += t_files
             total_videos += v_count
-            total_deleted_bin += d_bin
             accounts_chart_data.append({"name": acc["name"], "videos": v_count})
         except Exception as e:
             print(f"Error scanning {acc['name']}: {e}")
             accounts_chart_data.append({"name": acc["name"], "videos": 0})
 
-    recently_added = sum(1 for k, v in combined_files.items() if k not in prev_files and v.get("is_video"))
-    recently_deleted = sum(1 for k in prev_files if k not in combined_files)
+    # Get Exact File Names for Added and Deleted
+    added_names = [v["name"] for k, v in combined_files.items() if k not in prev_files]
+    deleted_names = [v["name"] for k, v in prev_files.items() if k not in combined_files]
 
+    # Folders Summary across all accounts
     folder_summary = {}
     for k, v in combined_files.items():
         f_name = v.get("folder", "Root")
@@ -215,8 +234,8 @@ if __name__ == "__main__":
         accounts_chart_data, 
         total_files, 
         total_videos, 
-        recently_added, 
-        recently_deleted + total_deleted_bin,
+        added_names, 
+        deleted_names,
         folder_summary
     )
 
@@ -227,4 +246,4 @@ if __name__ == "__main__":
         "max_video_count": total_videos,
         "total_files": total_files
     })
-        
+    
