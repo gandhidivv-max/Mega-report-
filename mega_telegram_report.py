@@ -2,7 +2,6 @@ import os
 import json
 import time
 import requests
-import urllib.parse
 from mega import Mega
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -43,90 +42,98 @@ def save_state(state):
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=4)
 
-def send_telegram_photo_only(photo_url):
+def send_telegram_photo(image_bytes):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+    files = {'photo': ('dashboard.png', image_bytes, 'image/png')}
+    payload = {'chat_id': TELEGRAM_CHAT_ID}
+    requests.post(url, data=payload, files=files)
+
+def generate_html_dashboard_image(accounts_data, total_files, total_videos, recently_added, recently_deleted, folder_summary):
+    # ఫోల్డర్ల వివరాల HTML
+    folder_items_html = ""
+    for f_name, stats in list(folder_summary.items())[:4]:
+        folder_items_html += f"""
+        <div style="background: #1e293b; padding: 8px 12px; border-radius: 6px; font-size: 13px; color: #cbd5e1;">
+            📁 <strong style="color: #ffffff;">{f_name}</strong>: {stats['videos']} Videos <span style="color: #64748b;">({stats['files']} Files)</span>
+        </div>
+        """
+
+    # అకౌంట్ బార్ చార్ట్ HTML
+    max_vids = max([acc["videos"] for acc in accounts_data] + [1])
+    bars_html = ""
+    colors = ["#00f2fe", "#e11d73", "#ff9a00"]
+    for i, acc in enumerate(accounts_data):
+        height_pct = int((acc["videos"] / max_vids) * 100)
+        bars_html += f"""
+        <div style="display: flex; flex-direction: column; align-items: center; flex: 1;">
+            <div style="color: #ffffff; font-weight: bold; margin-bottom: 5px; font-size: 14px;">{acc['videos']}</div>
+            <div style="width: 45px; height: 120px; background: #1e293b; border-radius: 6px; display: flex; align-items: flex-end; overflow: hidden;">
+                <div style="width: 100%; height: {height_pct}%; background: {colors[i % len(colors)]}; border-radius: 4px;"></div>
+            </div>
+            <div style="color: #94a3b8; margin-top: 8px; font-size: 12px; font-weight: bold;">{acc['name']}</div>
+        </div>
+        """
+
+    # పూర్తి UI క్యాన్వాస్ Template
+    html_template = f"""
+    <div style="width: 650px; background: #0f172a; padding: 25px; font-family: Arial, sans-serif; color: white; border-radius: 12px;">
+        <div style="font-size: 20px; font-weight: bold; margin-bottom: 20px; border-bottom: 2px solid #334155; padding-bottom: 10px; color: #00f2fe;">
+            ⚡ MEGA CLOUD LIVE DASHBOARD
+        </div>
+        
+        <!-- STATS CARDS -->
+        <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+            <div style="flex: 1; background: #1e293b; padding: 12px; border-radius: 8px; border-left: 4px solid #00f2fe;">
+                <div style="font-size: 11px; color: #94a3b8;">TOTAL FILES</div>
+                <div style="font-size: 20px; font-weight: bold; margin-top: 4px;">{total_files}</div>
+            </div>
+            <div style="flex: 1; background: #1e293b; padding: 12px; border-radius: 8px; border-left: 4px solid #e11d73;">
+                <div style="font-size: 11px; color: #94a3b8;">TOTAL VIDEOS</div>
+                <div style="font-size: 20px; font-weight: bold; margin-top: 4px;">{total_videos}</div>
+            </div>
+            <div style="flex: 1; background: #1e293b; padding: 12px; border-radius: 8px; border-left: 4px solid #22c55e;">
+                <div style="font-size: 11px; color: #94a3b8;">ADDED</div>
+                <div style="font-size: 20px; font-weight: bold; color: #22c55e; margin-top: 4px;">+{recently_added}</div>
+            </div>
+            <div style="flex: 1; background: #1e293b; padding: 12px; border-radius: 8px; border-left: 4px solid #ef4444;">
+                <div style="font-size: 11px; color: #94a3b8;">DELETED</div>
+                <div style="font-size: 20px; font-weight: bold; color: #ef4444; margin-top: 4px;">{recently_deleted}</div>
+            </div>
+        </div>
+
+        <!-- FOLDERS BREAKDOWN -->
+        <div style="margin-bottom: 20px;">
+            <div style="font-size: 12px; font-weight: bold; color: #38bdf8; margin-bottom: 8px;">FOLDERS BREAKDOWN</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                {folder_items_html}
+            </div>
+        </div>
+
+        <!-- GRAPH SECTION -->
+        <div>
+            <div style="font-size: 12px; font-weight: bold; color: #38bdf8; margin-bottom: 12px;">VIDEOS PER ACCOUNT</div>
+            <div style="display: flex; justify-content: space-around; background: #0b1120; padding: 15px; border-radius: 8px;">
+                {bars_html}
+            </div>
+        </div>
+    </div>
+    """
+
+    # HTML ని Image గా మార్చడానికి QuickChart Render API వాడటం
+    render_url = "https://quickchart.io/render"
     payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "photo": photo_url
+        "html": html_template,
+        "width": 700,
+        "height": 550,
+        "devicePixelRatio": 2
     }
-    requests.post(url, json=payload)
-
-def generate_quickchart_dashboard(accounts_data, total_files, total_videos, recently_added, recently_deleted, folder_summary):
-    labels = [acc["name"] for acc in accounts_data]
-    video_counts = [acc["videos"] for acc in accounts_data]
-
-    # ఫోల్డర్ల వివరాలను ఒకే లైన్ లోకి తీసుకురావడం
-    folder_lines = []
-    for f_name, stats in folder_summary.items():
-        folder_lines.append(f"{f_name}: {stats['videos']} Vids ({stats['files']} Files)")
     
-    folder_str = "  |  ".join(folder_lines[:3]) if folder_lines else "None"
-
-    chart_config = {
-        "type": "bar",
-        "data": {
-            "labels": labels,
-            "datasets": [{
-                "label": "Videos",
-                "data": video_counts,
-                "backgroundColor": ["#00f2fe", "#e11d73", "#ff9a00"],
-                "borderRadius": 8,
-                "datalabels": {
-                    "align": "top",
-                    "anchor": "end",
-                    "color": "#ffffff",
-                    "font": {"size": 16, "weight": "bold"}
-                }
-            }]
-        },
-        "options": {
-            "layout": {
-                "padding": {
-                    "top": 30,
-                    "bottom": 15,
-                    "left": 25,
-                    "right": 25
-                }
-            },
-            "plugins": {
-                "title": {
-                    "display": True,
-                    "text": [
-                        "MEGA CLOUD LIVE DASHBOARD",
-                        "───────────────────────────────────────────────────",
-                        f"Files: {total_files}   |   Videos: {total_videos}   |   Added: +{recently_added}   |   Deleted: {recently_deleted}",
-                        f"Folders: {folder_str}",
-                        "───────────────────────────────────────────────────"
-                    ],
-                    "color": "#ffffff",
-                    "font": {"size": 14, "weight": "bold"},
-                    "padding": {"bottom": 25}
-                },
-                "legend": {"display": False},
-                "datalabels": {
-                    "display": True,
-                    "color": "#ffffff"
-                }
-            },
-            "scales": {
-                "x": {
-                    "ticks": {"color": "#00f2fe", "font": {"size": 14, "weight": "bold"}},
-                    "grid": {"display": False}
-                },
-                "y": {
-                    "ticks": {"color": "#94a3b8", "font": {"size": 12}},
-                    "grid": {"color": "rgba(255, 255, 255, 0.1)"},
-                    "grace": "25%"
-                }
-            }
-        }
-    }
-
-    encoded_chart = urllib.parse.quote(json.dumps(chart_config))
-    # Height 650px పెంచడం వల్ల వివరాలన్నీ ఇమేజ్ లోనే స్పష్టంగా డిస్‌ప్లే అవుతాయి
-    return f"https://quickchart.io/chart?c={encoded_chart}&bkg=%230f172a&w=850&h=650&devicePixelRatio=2"
+    response = requests.post(render_url, json=payload)
+    if response.status_code == 200:
+        return response.content
+    return None
 
 def scan_mega_account(email, password):
     mega = Mega()
@@ -218,7 +225,7 @@ if __name__ == "__main__":
             if v.get("is_video"):
                 folder_summary[f_name]["videos"] += 1
 
-        chart_url = generate_quickchart_dashboard(
+        img_bytes = generate_html_dashboard_image(
             accounts_chart_data, 
             total_files, 
             total_videos, 
@@ -227,7 +234,8 @@ if __name__ == "__main__":
             folder_summary
         )
 
-        send_telegram_photo_only(chart_url)
+        if img_bytes:
+            send_telegram_photo(img_bytes)
 
         save_state({
             "files": combined_files,
@@ -236,4 +244,4 @@ if __name__ == "__main__":
         })
     except Exception:
         pass
-    
+        
