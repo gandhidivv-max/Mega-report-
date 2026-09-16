@@ -15,25 +15,24 @@ video_extensions = ('.mp4', '.mkv', '.avi', '.mov', '.flv', '.webm', '.3gp', '.m
 def get_all_mega_credentials():
     accounts = []
     
-    # Account 1 Credentials
+    # Check Account 1 (Try all common env key names)
     e1 = os.environ.get("MEGA_EMAIL_1") or os.environ.get("MEGA_EMAIL") or os.environ.get("EMAIL_1")
     p1 = os.environ.get("MEGA_PASSWORD_1") or os.environ.get("MEGA_PASSWORD") or os.environ.get("PASS_1")
     if e1 and p1:
-        accounts.append({"email": e1.strip(), "pass": p1.strip(), "name": "Account 1"})
+        accounts.append({"email": e1.strip(), "pass": p1.strip(), "name": "Acc 1"})
 
-    # Account 2 Credentials
+    # Check Account 2
     e2 = os.environ.get("MEGA_EMAIL_2") or os.environ.get("EMAIL_2")
     p2 = os.environ.get("MEGA_PASSWORD_2") or os.environ.get("PASS_2")
     if e2 and p2:
-        accounts.append({"email": e2.strip(), "pass": p2.strip(), "name": "Account 2"})
+        accounts.append({"email": e2.strip(), "pass": p2.strip(), "name": "Acc 2"})
 
-    # Account 3 Credentials
+    # Check Account 3
     e3 = os.environ.get("MEGA_EMAIL_3") or os.environ.get("EMAIL_3")
     p3 = os.environ.get("MEGA_PASSWORD_3") or os.environ.get("PASS_3")
     if e3 and p3:
-        accounts.append({"email": e3.strip(), "pass": p3.strip(), "name": "Account 3"})
+        accounts.append({"email": e3.strip(), "pass": p3.strip(), "name": "Acc 3"})
 
-    print(f"Total Accounts Detected in Secrets: {len(accounts)}")
     return accounts
 
 def load_state():
@@ -99,7 +98,7 @@ def draw_combined_folders(draw, x_start, y_start, width, height, all_folders, ti
             line = f"• {f_name[:12]} - {stats['videos']}"
             draw.text((curr_x, curr_y), line, fill='#ffffff', font=font_regular)
 
-def generate_pillow_dashboard(accounts_data, total_files, total_videos, added_names, deleted_names, combined_folders):
+def generate_pillow_dashboard(accounts_data, total_files, total_videos, added_names, deleted_names, combined_folders, detected_acc_count):
     width, height = 1080, 2400
     img = Image.new('RGB', (width, height), color='#0b0f19')
     draw = ImageDraw.Draw(img)
@@ -111,7 +110,7 @@ def generate_pillow_dashboard(accounts_data, total_files, total_videos, added_na
 
     # Header
     draw.rectangle([(0, 0), (width, 80)], fill='#1e293b')
-    draw.text((30, 24), "MEGA CLOUD LIVE DASHBOARD", fill='#00f2fe', font=font_title)
+    draw.text((30, 24), f"MEGA CLOUD LIVE DASHBOARD (ACCOUNTS: {detected_acc_count})", fill='#00f2fe', font=font_title)
 
     # 4 Stat Cards Grid
     cards = [
@@ -165,7 +164,7 @@ def scan_mega_account(account_info):
     password = account_info["pass"]
     acc_name = account_info["name"]
 
-    print(f"Scanning {acc_name} ({email})...")
+    print(f"Attempting login for {acc_name}: {email}")
     mega = Mega()
     m = None
     for attempt in range(3):
@@ -175,12 +174,17 @@ def scan_mega_account(account_info):
             if m:
                 break
         except Exception as e:
-            print(f"Attempt {attempt+1} failed for {acc_name}: {e}")
+            print(f"Error logging into {acc_name} (Attempt {attempt+1}): {e}")
             if attempt == 2:
                 return {}, 0, 0, {}
             time.sleep(10)
     
-    files_data = m.get_files()
+    try:
+        files_data = m.get_files()
+    except Exception as e:
+        print(f"Error fetching files for {acc_name}: {e}")
+        return {}, 0, 0, {}
+
     account_files = {}
     folder_map = {}
     video_count = 0
@@ -220,13 +224,13 @@ def scan_mega_account(account_info):
                     video_count += 1
                     acc_folders[folder_name]["videos"] += 1
 
-    print(f"Done scanning {acc_name}: Found {total_files} files, {video_count} videos, {len(acc_folders)} folders.")
+    print(f"Successfully processed {acc_name}: {total_files} files, {len(acc_folders)} folders.")
     return account_files, total_files, video_count, acc_folders
 
 if __name__ == "__main__":
     mega_accounts = get_all_mega_credentials()
     if not mega_accounts:
-        print("No Mega credentials provided!")
+        print("No Mega credentials detected in Environment Variables!")
         exit()
 
     prev_state = load_state()
@@ -239,22 +243,17 @@ if __name__ == "__main__":
     combined_folders = {}
 
     for acc in mega_accounts:
-        try:
-            files, t_files, v_count, acc_folders = scan_mega_account(acc)
-            combined_files.update(files)
-            total_files += t_files
-            total_videos += v_count
-            accounts_chart_data.append({"name": acc["name"], "videos": v_count})
+        files, t_files, v_count, acc_folders = scan_mega_account(acc)
+        combined_files.update(files)
+        total_files += t_files
+        total_videos += v_count
+        accounts_chart_data.append({"name": acc["name"], "videos": v_count})
 
-            for f_name, stats in acc_folders.items():
-                if f_name not in combined_folders:
-                    combined_folders[f_name] = {"files": 0, "videos": 0}
-                combined_folders[f_name]["files"] += stats["files"]
-                combined_folders[f_name]["videos"] += stats["videos"]
-
-        except Exception as e:
-            print(f"Error scanning {acc['name']}: {e}")
-            accounts_chart_data.append({"name": acc["name"], "videos": 0})
+        for f_name, stats in acc_folders.items():
+            if f_name not in combined_folders:
+                combined_folders[f_name] = {"files": 0, "videos": 0}
+            combined_folders[f_name]["files"] += stats["files"]
+            combined_folders[f_name]["videos"] += stats["videos"]
 
     added_names = [v["name"] for k, v in combined_files.items() if k not in prev_files]
     deleted_names = [v["name"] for k, v in prev_files.items() if k not in combined_files]
@@ -265,7 +264,8 @@ if __name__ == "__main__":
         total_videos, 
         added_names, 
         deleted_names,
-        combined_folders
+        combined_folders,
+        len(mega_accounts)
     )
 
     send_telegram_photo_bytes(img_bytes)
