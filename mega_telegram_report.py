@@ -13,23 +13,23 @@ video_extensions = ('.mp4', '.mkv', '.avi', '.mov', '.flv', '.webm', '.3gp', '.m
 
 def get_all_mega_credentials():
     accounts = []
-    i = 1
-    while True:
-        e = os.environ.get(f"MEGA_EMAIL_{i}") or (os.environ.get("MEGA_EMAIL") if i == 1 else None)
-        p = os.environ.get(f"MEGA_PASSWORD_{i}") or (os.environ.get("MEGA_PASSWORD") if i == 1 else None)
-        
-        if e and p:
-            accounts.append({"email": e.strip(), "pass": p.strip(), "name": f"Account {i}"})
-            i += 1
-        else:
-            if i > 10:
-                break
-            i += 1
+    
+    # Direct fetch to ensure no index skips
+    e1 = os.environ.get("MEGA_EMAIL_1") or os.environ.get("MEGA_EMAIL")
+    p1 = os.environ.get("MEGA_PASSWORD_1") or os.environ.get("MEGA_PASSWORD")
+    if e1 and p1:
+        accounts.append({"email": e1.strip(), "pass": p1.strip(), "name": "Account 1"})
+    else:
+        print("⚠️ Warning: Account 1 Credentials missing in Environment!")
 
-    print(f"Total Accounts Detected to Scan: {len(accounts)}")
-    for acc in accounts:
-        print(f" -> Found: {acc['name']} ({acc['email'][:3]}***)")
-        
+    e2 = os.environ.get("MEGA_EMAIL_2")
+    p2 = os.environ.get("MEGA_PASSWORD_2")
+    if e2 and p2:
+        accounts.append({"email": e2.strip(), "pass": p2.strip(), "name": "Account 2"})
+    else:
+        print("⚠️ Warning: Account 2 Credentials missing in Environment! Check GitHub Secrets.")
+
+    print(f"Total Accounts Found to Process: {len(accounts)}")
     return accounts
 
 def load_state():
@@ -49,27 +49,19 @@ def save_state(state):
         print(f"Error saving state: {e}")
 
 def send_telegram_message(text):
-    """
-    Telegram message length limit is 4096 chars.
-    If text exceeds 3800 chars, split and send in multiple chunks.
-    """
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("Telegram Credentials Missing!")
         return
         
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    
-    # 3800 characters limit safety margin
     MAX_LEN = 3800
     
     if len(text) <= MAX_LEN:
         chunks = [text]
     else:
-        # Split by lines to avoid breaking HTML tags
         lines = text.split("\n")
         chunks = []
         current_chunk = ""
-        
         for line in lines:
             if len(current_chunk) + len(line) + 1 > MAX_LEN:
                 chunks.append(current_chunk)
@@ -86,31 +78,35 @@ def send_telegram_message(text):
             'parse_mode': 'HTML'
         }
         res = requests.post(url, data=payload)
-        print(f"Telegram Part {idx+1}/{len(chunks)} Response:", res.text)
-        time.sleep(1)  # Delay between parts
+        print(f"Telegram Chunk {idx+1}/{len(chunks)} Status:", res.status_code)
+        time.sleep(1)
 
 def scan_mega_account(account_info):
     email = account_info["email"]
     password = account_info["pass"]
     acc_name = account_info["name"]
 
-    print(f"\n--- Scanning {acc_name} ({email}) ---")
-    mega = Mega()
+    print(f"\n==========================================")
+    print(f"Starting Scan for {acc_name} ({email[:4]}***)")
+    print(f"==========================================")
+    
     m = None
     
-    for attempt in range(4):
+    for attempt in range(1, 4):
         try:
-            time.sleep(5)
+            print(f"Login Attempt {attempt} for {acc_name}...")
+            time.sleep(10) # Safety delay to avoid IP rate limit
+            mega = Mega()
             m = mega.login(email, password)
             if m:
-                print(f"Successfully logged in to {acc_name}")
+                print(f"✅ Successful Login: {acc_name}")
                 break
         except Exception as e:
-            print(f"Login attempt {attempt+1} failed for {acc_name}: {e}")
+            print(f"❌ Attempt {attempt} Failed for {acc_name}: {e}")
             if attempt == 3:
-                print(f"CRITICAL: Failed to login to {acc_name}")
+                print(f"🚨 SKIPPING {acc_name}: Could not log in after 3 attempts.")
                 return {}, 0, 0, {}
-            time.sleep(10)
+            time.sleep(15)
     
     try:
         files_data = m.get_files()
@@ -157,14 +153,14 @@ def scan_mega_account(account_info):
                     video_count += 1
                     acc_folders[folder_name]["videos"] += 1
 
-    print(f"Done scanning {acc_name}: {total_files} Total Files, {video_count} Videos.")
+    print(f"Summary for {acc_name}: Total Files = {total_files}, Videos = {video_count}")
     return account_files, total_files, video_count, acc_folders
 
 if __name__ == "__main__":
     mega_accounts = get_all_mega_credentials()
     if not mega_accounts:
-        print("No Mega credentials detected!")
-        exit()
+        print("Error: No Mega accounts configured properly.")
+        exit(1)
 
     prev_state = load_state()
     prev_files = prev_state.get("files", {})
@@ -173,20 +169,24 @@ if __name__ == "__main__":
     total_files = 0
     total_videos = 0
     combined_folders = {}
+    
+    scanned_acc_count = 0
 
     for acc in mega_accounts:
         try:
             files, t_files, v_count, acc_folders = scan_mega_account(acc)
             
-            combined_files.update(files)
-            total_files += t_files
-            total_videos += v_count
+            if files:
+                scanned_acc_count += 1
+                combined_files.update(files)
+                total_files += t_files
+                total_videos += v_count
 
-            for f_name, stats in acc_folders.items():
-                if f_name not in combined_folders:
-                    combined_folders[f_name] = {"files": 0, "videos": 0}
-                combined_folders[f_name]["files"] += stats["files"]
-                combined_folders[f_name]["videos"] += stats["videos"]
+                for f_name, stats in acc_folders.items():
+                    if f_name not in combined_folders:
+                        combined_folders[f_name] = {"files": 0, "videos": 0}
+                    combined_folders[f_name]["files"] += stats["files"]
+                    combined_folders[f_name]["videos"] += stats["videos"]
 
         except Exception as e:
             print(f"Error processing {acc['name']}: {e}")
@@ -196,6 +196,7 @@ if __name__ == "__main__":
 
     report_lines = [
         "🌌 <b>MEGA CLOUD FULL REPORT</b>\n",
+        f"👥 Scanned Accounts: {scanned_acc_count}/{len(mega_accounts)}",
         f"📁 Total Files: {total_files}",
         f"🎬 Total Videos: {total_videos}",
         f"➕ Recently Added: +{len(added_names)}",
@@ -232,7 +233,6 @@ if __name__ == "__main__":
 
     final_report = "\n".join(report_lines)
 
-    # Send chunked message safely to Telegram
     send_telegram_message(final_report)
 
     save_state({
