@@ -68,20 +68,42 @@ def get_hd_font(size):
                 pass
     return ImageFont.load_default()
 
-def generate_pillow_dashboard(accounts_data, total_files, total_videos, added_names, deleted_names, folder_summary):
-    # Ultra-HD Canvas Dimensions (1600x1400)
-    width, height = 1600, 1400
+def draw_account_folders(draw, x_start, y_start, width, height, acc_title, folders, title_color, font_sub, font_regular):
+    draw.rectangle([(x_start, y_start), (x_start + width, y_start + height)], fill='#151d30', outline=title_color, width=1)
+    draw.text((x_start + 20, y_start + 15), acc_title, fill=title_color, font=font_sub)
+    
+    if not folders:
+        draw.text((x_start + 20, y_start + 60), "No folders found", fill='#94a3b8', font=font_regular)
+        return
+
+    folder_items = list(folders.items())
+    col_width = 230
+    items_per_col = 10
+    
+    for idx, (f_name, stats) in enumerate(folder_items):
+        col_index = idx // items_per_col
+        row_index = idx % items_per_col
+        
+        curr_x = x_start + 20 + (col_index * col_width)
+        curr_y = y_start + 65 + (row_index * 28)
+        
+        if curr_x + col_width <= x_start + width:
+            line = f"• {f_name[:15]} - {stats['videos']}"
+            draw.text((curr_x, curr_y), line, fill='#ffffff', font=font_regular)
+
+def generate_pillow_dashboard(accounts_data, total_files, total_videos, added_names, deleted_names, folder_summary_by_acc):
+    width, height = 1600, 1150
     img = Image.new('RGB', (width, height), color='#0b0f19')
     draw = ImageDraw.Draw(img)
 
     font_title = get_hd_font(34)
     font_sub = get_hd_font(24)
     font_bold = get_hd_font(28)
-    font_regular = get_hd_font(22)
+    font_regular = get_hd_font(20)
 
-    # Top Header
+    # Header
     draw.rectangle([(0, 0), (width, 100)], fill='#1e293b')
-    draw.text((40, 32), "MEGA CLOUD LIVE DASHBOARD (FULL REPORT)", fill='#00f2fe', font=font_title)
+    draw.text((40, 32), "MEGA CLOUD LIVE DASHBOARD", fill='#00f2fe', font=font_title)
 
     # 4 Stat Cards
     cards = [
@@ -96,63 +118,41 @@ def generate_pillow_dashboard(accounts_data, total_files, total_videos, added_na
         draw.text((x + 24, 160), label, fill='#94a3b8', font=font_sub)
         draw.text((x + 24, 200), val, fill=color, font=font_bold)
 
-    # Folders Breakdown Section (Account-wise Granular Split)
-    draw.text((40, 300), "ALL FOLDERS BREAKDOWN (BY ACCOUNT)", fill='#38bdf8', font=font_sub)
-    draw.rectangle([(40, 340), (1560, 680)], fill='#151d30')
+    # Multi-Column Folders Breakdown
+    draw.text((40, 300), "FOLDERS BREAKDOWN", fill='#38bdf8', font=font_sub)
 
-    y_folder = 360
-    if folder_summary:
-        for f_name, stats in list(folder_summary.items())[:11]:
-            line = f"> {f_name[:55]}: {stats['videos']} Videos ({stats['files']} Files)"
-            draw.text((70, y_folder), line, fill='#ffffff', font=font_regular)
-            y_folder += 28
-    else:
-        draw.text((70, 360), "No folders found", fill='#ffffff', font=font_regular)
+    # Account 1 Folders Box
+    acc1_folders = folder_summary_by_acc.get("Account 1", {})
+    draw_account_folders(draw, 40, 340, 740, 410, "ACCOUNT 1 FOLDERS", acc1_folders, '#00f2fe', font_sub, font_regular)
 
-    # File Updates: Added & Deleted Names Log
-    draw.text((40, 720), "RECENT FILE LOGS", fill='#38bdf8', font=font_sub)
+    # Account 2 Folders Box
+    acc2_folders = folder_summary_by_acc.get("Account 2", {})
+    draw_account_folders(draw, 820, 340, 740, 410, "ACCOUNT 2 FOLDERS", acc2_folders, '#e11d73', font_sub, font_regular)
+
+    # File Logs Section
+    draw.text((40, 780), "RECENT FILE LOGS", fill='#38bdf8', font=font_sub)
     
     # Added Box
-    draw.rectangle([(40, 760), (780, 1000)], fill='#151d30', outline='#22c55e', width=2)
-    draw.text((60, 780), "RECENTLY ADDED FILES", fill='#22c55e', font=font_sub)
-    y_add = 820
+    draw.rectangle([(40, 820), (780, 1080)], fill='#151d30', outline='#22c55e', width=2)
+    draw.text((60, 840), "RECENTLY ADDED FILES", fill='#22c55e', font=font_sub)
+    y_add = 880
     if added_names:
         for name in added_names[:6]:
             draw.text((60, y_add), f"+ {name[:45]}", fill='#ffffff', font=font_regular)
             y_add += 28
     else:
-        draw.text((60, 820), "No new files added recently", fill='#94a3b8', font=font_regular)
+        draw.text((60, 880), "No new files added recently", fill='#94a3b8', font=font_regular)
 
     # Deleted Box
-    draw.rectangle([(820, 760), (1560, 1000)], fill='#151d30', outline='#ef4444', width=2)
-    draw.text((840, 780), "RECENTLY DELETED FILES", fill='#ef4444', font=font_sub)
-    y_del = 820
+    draw.rectangle([(820, 820), (1560, 1080)], fill='#151d30', outline='#ef4444', width=2)
+    draw.text((840, 840), "RECENTLY DELETED FILES", fill='#ef4444', font=font_sub)
+    y_del = 880
     if deleted_names:
         for name in deleted_names[:6]:
             draw.text((840, y_del), f"- {name[:45]}", fill='#ffffff', font=font_regular)
             y_del += 28
     else:
-        draw.text((840, 820), "No files deleted recently", fill='#94a3b8', font=font_regular)
-
-    # Bar Graph Box (Videos per account)
-    draw.text((40, 1040), "VIDEOS PER ACCOUNT", fill='#38bdf8', font=font_sub)
-    draw.rectangle([(40, 1080), (1560, 1340)], fill='#0b1120')
-    draw.line([(80, 1280), (1520, 1280)], fill='#334155', width=2)
-
-    max_vids = max([acc["videos"] for acc in accounts_data] + [1])
-    colors = ["#00f2fe", "#e11d73", "#ff9a00"]
-    x_pos = 200
-
-    for i, acc in enumerate(accounts_data):
-        bar_h = int((acc["videos"] / max_vids) * 150)
-        y_pos = 1280 - bar_h
-        bar_color = colors[i % len(colors)]
-
-        draw.rectangle([(x_pos, y_pos), (x_pos + 140, 1280)], fill=bar_color)
-        draw.text((x_pos + 45, max(y_pos - 35, 1100)), str(acc['videos']), fill='#ffffff', font=font_bold)
-        draw.text((x_pos + 30, 1290), acc['name'], fill='#94a3b8', font=font_sub)
-        
-        x_pos += 450
+        draw.text((840, 880), "No files deleted recently", fill='#94a3b8', font=font_regular)
 
     buffer = BytesIO()
     img.save(buffer, format='PNG', quality=100)
@@ -182,6 +182,7 @@ def scan_mega_account(account_info):
     folder_map = {}
     video_count = 0
     total_files = 0
+    acc_folders = {}
 
     if isinstance(files_data, dict):
         for node_id, node_info in files_data.items():
@@ -199,19 +200,24 @@ def scan_mega_account(account_info):
                 folder_name = folder_map.get(parent_id, "Root")
                 is_vid = str(file_name).lower().endswith(video_extensions)
                 
-                # Dynamic account tag prefix for multi-account folders
-                full_folder_tag = f"[{acc_name}] {folder_name}"
                 unique_key = f"{email}_{file_id}"
                 
                 account_files[unique_key] = {
                     "name": file_name,
-                    "folder": full_folder_tag,
+                    "folder": folder_name,
+                    "account": acc_name,
                     "is_video": is_vid
                 }
+                
+                if folder_name not in acc_folders:
+                    acc_folders[folder_name] = {"files": 0, "videos": 0}
+                acc_folders[folder_name]["files"] += 1
+
                 if is_vid:
                     video_count += 1
+                    acc_folders[folder_name]["videos"] += 1
 
-    return account_files, total_files, video_count
+    return account_files, total_files, video_count, acc_folders
 
 if __name__ == "__main__":
     mega_accounts = get_all_mega_credentials()
@@ -226,14 +232,16 @@ if __name__ == "__main__":
     total_files = 0
     total_videos = 0
     accounts_chart_data = []
+    folder_summary_by_acc = {}
 
     for acc in mega_accounts:
         try:
-            files, t_files, v_count = scan_mega_account(acc)
+            files, t_files, v_count, acc_folders = scan_mega_account(acc)
             combined_files.update(files)
             total_files += t_files
             total_videos += v_count
             accounts_chart_data.append({"name": acc["name"], "videos": v_count})
+            folder_summary_by_acc[acc["name"]] = acc_folders
         except Exception as e:
             print(f"Error scanning {acc['name']}: {e}")
             accounts_chart_data.append({"name": acc["name"], "videos": 0})
@@ -241,22 +249,13 @@ if __name__ == "__main__":
     added_names = [v["name"] for k, v in combined_files.items() if k not in prev_files]
     deleted_names = [v["name"] for k, v in prev_files.items() if k not in combined_files]
 
-    folder_summary = {}
-    for k, v in combined_files.items():
-        f_name = v.get("folder", "Root")
-        if f_name not in folder_summary:
-            folder_summary[f_name] = {"files": 0, "videos": 0}
-        folder_summary[f_name]["files"] += 1
-        if v.get("is_video"):
-            folder_summary[f_name]["videos"] += 1
-
     img_bytes = generate_pillow_dashboard(
         accounts_chart_data, 
         total_files, 
         total_videos, 
         added_names, 
         deleted_names,
-        folder_summary
+        folder_summary_by_acc
     )
 
     send_telegram_photo_bytes(img_bytes)
@@ -266,4 +265,4 @@ if __name__ == "__main__":
         "max_video_count": total_videos,
         "total_files": total_files
     })
-            
+              
