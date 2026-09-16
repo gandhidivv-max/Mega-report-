@@ -78,9 +78,8 @@ def draw_combined_folders(draw, x_start, y_start, width, height, all_folders, ti
 
     folder_items = list(all_folders.items())
     col_width = 160  
-    max_cols = (width - 30) // col_width  # గరిష్టంగా పడే కాలమ్‌ల సంఖ్య
+    max_cols = (width - 30) // col_width
     
-    # ఫోల్డర్‌ల మొత్తం సంఖ్యను బట్టి కాలమ్‌కి ఎన్ని పడాలో డైనమిక్‌గా లెక్కిస్తుంది
     total_folders = len(folder_items)
     items_per_col = max(50, (total_folders + max_cols - 1) // max_cols)
 
@@ -91,12 +90,11 @@ def draw_combined_folders(draw, x_start, y_start, width, height, all_folders, ti
         curr_x = x_start + 15 + (col_index * col_width)
         curr_y = y_start + 55 + (row_index * 24)
         
-        # ఇమేజ్ బాక్స్ దాటిపోకుండా సేఫ్‌గా సరిపోయేలా చెకింగ్
         if curr_x + col_width <= x_start + width and curr_y + 24 <= y_start + height:
             line = f"• {f_name[:12]} - {stats['videos']}"
             draw.text((curr_x, curr_y), line, fill='#ffffff', font=font_regular)
 
-def generate_pillow_dashboard(accounts_data, total_files, total_videos, added_names, deleted_names, folder_summary_by_acc):
+def generate_pillow_dashboard(accounts_data, total_files, total_videos, added_names, deleted_names, combined_folders):
     width, height = 1080, 2400
     img = Image.new('RGB', (width, height), color='#0b0f19')
     draw = ImageDraw.Draw(img)
@@ -122,15 +120,6 @@ def generate_pillow_dashboard(accounts_data, total_files, total_videos, added_na
         draw.rectangle([(x, y), (x + 500, y + 95)], fill='#1e293b', outline=color, width=2)
         draw.text((x + 20, y + 15), label, fill='#94a3b8', font=font_sub)
         draw.text((x + 20, y + 48), val, fill=color, font=font_bold)
-
-    # Combine Account 1 & Account 2 Folders
-    combined_folders = {}
-    for acc_name, folders in folder_summary_by_acc.items():
-        for f_name, stats in folders.items():
-            if f_name not in combined_folders:
-                combined_folders[f_name] = {"files": 0, "videos": 0}
-            combined_folders[f_name]["files"] += stats["files"]
-            combined_folders[f_name]["videos"] += stats["videos"]
 
     # Dynamic Combined Box
     draw.text((30, 330), "FOLDERS BREAKDOWN (COMBINED)", fill='#38bdf8', font=font_sub)
@@ -181,7 +170,8 @@ def scan_mega_account(account_info):
                 break
         except Exception as e:
             if attempt == 2:
-                raise e
+                print(f"Failed to login {acc_name}: {e}")
+                return {}, 0, 0, {}
             time.sleep(15)
     
     files_data = m.get_files()
@@ -239,7 +229,7 @@ if __name__ == "__main__":
     total_files = 0
     total_videos = 0
     accounts_chart_data = []
-    folder_summary_by_acc = {}
+    combined_folders = {}
 
     for acc in mega_accounts:
         try:
@@ -248,7 +238,14 @@ if __name__ == "__main__":
             total_files += t_files
             total_videos += v_count
             accounts_chart_data.append({"name": acc["name"], "videos": v_count})
-            folder_summary_by_acc[acc["name"]] = acc_folders
+
+            # Merge folders correctly without overwriting
+            for f_name, stats in acc_folders.items():
+                if f_name not in combined_folders:
+                    combined_folders[f_name] = {"files": 0, "videos": 0}
+                combined_folders[f_name]["files"] += stats["files"]
+                combined_folders[f_name]["videos"] += stats["videos"]
+
         except Exception as e:
             print(f"Error scanning {acc['name']}: {e}")
             accounts_chart_data.append({"name": acc["name"], "videos": 0})
@@ -262,7 +259,7 @@ if __name__ == "__main__":
         total_videos, 
         added_names, 
         deleted_names,
-        folder_summary_by_acc
+        combined_folders
     )
 
     send_telegram_photo_bytes(img_bytes)
@@ -272,4 +269,4 @@ if __name__ == "__main__":
         "max_video_count": total_videos,
         "total_files": total_files
     })
-    
+                
