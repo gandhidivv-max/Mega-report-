@@ -1,2 +1,4 @@
 mega.py
 requests
+pillow
+matplotlib
